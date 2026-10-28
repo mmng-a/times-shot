@@ -71,9 +71,12 @@ public enum RichText {
         var segments: [(text: String, markers: [Marker])] = []
         var offset = 0
         for run in text.runs {
-            let value = String(text[run.range].characters)
+            var value = String(text[run.range].characters)
             let attributes = source.attributes(at: offset, effectiveRange: nil)
             offset += (value as NSString).length
+            if let style = attributes[.paragraphStyle] as? NSParagraphStyle, !style.textLists.isEmpty {
+                value = value.replacingOccurrences(of: "•\t", with: "• ")
+            }
             let font = attributes[.font] as? NSFont ?? Self.font
             let traits = font.fontDescriptor.symbolicTraits
             var markers: [Marker] = []
