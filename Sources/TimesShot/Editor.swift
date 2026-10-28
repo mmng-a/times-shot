@@ -31,7 +31,7 @@ struct DraftEditor: NSViewRepresentable {
         editor.autoresizingMask = [.width]
         editor.textContainer?.widthTracksTextView = true
         editor.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        editor.registerForDraggedTypes([.fileURL, .png, .tiff])
+        editor.registerForDraggedTypes([.fileURL] + PostingTextView.imagePasteboardTypes.map(\.type))
         editor.string = text
         editor.send = send
         editor.discard = discard
@@ -64,6 +64,14 @@ struct DraftEditor: NSViewRepresentable {
 }
 
 final class PostingTextView: NSTextView {
+    static let imagePasteboardTypes: [(type: NSPasteboard.PasteboardType, filename: String)] = [
+        (NSPasteboard.PasteboardType(UTType.gif.identifier), "clipboard.gif"),
+        (NSPasteboard.PasteboardType(UTType.webP.identifier), "clipboard.webp"),
+        (.png, "clipboard.png"),
+        (NSPasteboard.PasteboardType(UTType.jpeg.identifier), "clipboard.jpg"),
+        (.tiff, "clipboard.tiff")
+    ]
+
     var send: (() -> Void)?
     var discard: (() -> Void)?
     var addFiles: (([URL]) -> Void)?
@@ -85,8 +93,15 @@ final class PostingTextView: NSTextView {
         } else { discard?() }
     }
 
-    override func paste(_ sender: Any?) {
-        if !acceptImages(from: .general) { super.pasteAsPlainText(sender) }
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        [.fileURL] + Self.imagePasteboardTypes.map(\.type) + super.readablePasteboardTypes
+    }
+
+    override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        if type == .fileURL || Self.imagePasteboardTypes.contains(where: { $0.type == type }) {
+            return acceptImages(from: pasteboard)
+        }
+        return super.readSelection(from: pasteboard, type: type)
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
@@ -103,8 +118,7 @@ final class PostingTextView: NSTextView {
 
     private func canAcceptImages(_ pasteboard: NSPasteboard) -> Bool {
         pasteboard.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
-            || pasteboard.availableType(from: [.png, .tiff, NSPasteboard.PasteboardType("com.compuserve.gif"),
-                                              NSPasteboard.PasteboardType("org.webmproject.webp")]) != nil
+            || pasteboard.availableType(from: Self.imagePasteboardTypes.map(\.type)) != nil
     }
 
     private func acceptImages(from pasteboard: NSPasteboard) -> Bool {
@@ -113,11 +127,7 @@ final class PostingTextView: NSTextView {
             addFiles?(urls)
             return true
         }
-        for (type, filename) in [
-            (NSPasteboard.PasteboardType("com.compuserve.gif"), "clipboard.gif"),
-            (NSPasteboard.PasteboardType("org.webmproject.webp"), "clipboard.webp"),
-            (.png, "clipboard.png"), (.tiff, "clipboard.tiff")
-        ] {
+        for (type, filename) in Self.imagePasteboardTypes {
             if let data = pasteboard.data(forType: type) {
                 addImage?(data, filename)
                 return true
