@@ -23,7 +23,7 @@ public struct SlackClient: Sendable {
     }
 
     public func send(_ post: PendingPost) async throws {
-        let text = SlackMarkdown.convert(post.draft.text)
+        let text = post.draft.richText.map(RichText.slackText) ?? SlackMarkdown.convert(post.draft.text)
         if post.draft.images.isEmpty {
             _ = try await call("chat.postMessage", token: post.token, body: [
                 "channel": post.channelID, "text": text, "mrkdwn": true,

@@ -15,10 +15,12 @@ public struct ImageAttachment: Codable, Equatable, Identifiable, Sendable {
 public struct Draft: Codable, Equatable, Sendable {
     public var text: String
     public var images: [ImageAttachment]
+    public var richText: AttributedString?
 
-    public init(text: String = "", images: [ImageAttachment] = []) {
+    public init(text: String = "", images: [ImageAttachment] = [], richText: AttributedString? = nil) {
         self.text = text
         self.images = images
+        self.richText = richText
     }
 
     public var isEmpty: Bool {

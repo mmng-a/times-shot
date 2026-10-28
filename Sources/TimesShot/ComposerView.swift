@@ -11,7 +11,7 @@ struct ComposerView: View {
         VStack(alignment: .leading, spacing: 0) {
             ComposerHeader(configuration: model.configuration, settings: settings)
             Divider()
-            DraftEditor(text: $model.draft.text, send: model.send, discard: {
+            DraftEditor(text: $model.draft.text, richText: $model.draft.richText, send: model.send, discard: {
                 model.discardDraft()
                 model.onAccepted?()
             }, addFiles: model.addFiles, addImage: model.addImage)

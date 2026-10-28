@@ -11,7 +11,20 @@ private final class MockHTTP: @unchecked Sendable {
     func reset(_ replies: [String?]) { lock.withLock { self.replies = replies; recorded = [] } }
     var requests: [URLRequest] { lock.withLock { recorded } }
     func accept(_ request: URLRequest) -> String? {
-        lock.withLock {
+        var request = request
+        if request.httpBody == nil, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var body = Data()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                guard count > 0 else { break }
+                body.append(contentsOf: buffer.prefix(count))
+            }
+            request.httpBody = body
+        }
+        return lock.withLock {
             recorded.append(request)
             return replies.isEmpty ? nil : replies.removeFirst()
         }
@@ -54,6 +67,16 @@ struct SlackClientTests {
         #expect(requests.first?.value(forHTTPHeaderField: "Authorization") == "Bearer user-token")
     }
 
+    @Test func richTextIsConvertedForTextPosts() async throws {
+        MockHTTP.shared.reset([#"{"ok":true}"#])
+        let content = RichText.fromMarkdown("**太字**と[リンク](https://example.com)")
+        try await client().send(PendingPost(draft: Draft(text: String(content.characters), richText: content),
+                                           channelID: "C123", token: "user-token"))
+        let body = try #require(MockHTTP.shared.requests.first?.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["text"] as? String == "*太字*と<https://example.com|リンク>")
+    }
+
     @Test func imagesAndTextPublishTogetherAfterAllUploads() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data([1, 2, 3]).write(to: file)
@@ -66,11 +89,15 @@ struct SlackClientTests {
             "OK",
             #"{"ok":true}"#
         ])
-        try await client().send(PendingPost(draft: Draft(text: "画像の説明", images: [image, image]), channelID: "C123", token: "user-token"))
+        let content = RichText.fromMarkdown("**画像の説明**")
+        try await client().send(PendingPost(draft: Draft(text: "画像の説明", images: [image, image], richText: content), channelID: "C123", token: "user-token"))
         let requests = MockHTTP.shared.requests
         #expect(requests.map { $0.url!.lastPathComponent } == ["files.getUploadURLExternal", "one", "files.getUploadURLExternal", "two", "files.completeUploadExternal"])
         #expect(requests[1].value(forHTTPHeaderField: "Authorization") == nil)
         #expect(requests[3].value(forHTTPHeaderField: "Authorization") == nil)
+        let body = try #require(requests.last?.httpBody)
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["initial_comment"] as? String == "*画像の説明*")
     }
 
     @Test func failedUploadDoesNotPublishTextOrRetry() async throws {
