@@ -17,7 +17,9 @@ struct DraftEditor: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
-        let editor = PostingTextView()
+        let editor = PostingTextView(usingTextLayoutManager: true)
+        // Drafts include list markers, so TextKit must not generate them again.
+        editor.textContentStorage?.includesTextListMarkers = true
         editor.delegate = context.coordinator
         editor.isRichText = true
         editor.importsGraphics = false
@@ -110,6 +112,14 @@ final class PostingTextView: NSTextView {
     var discard: (() -> Void)?
     var addFiles: (([URL]) -> Void)?
     var addImage: ((Data, String) -> Void)?
+
+    override func didChangeText() {
+        super.didChangeText()
+        if string.isEmpty, !hasMarkedText() {
+            typingAttributes = [.font: RichText.font, .foregroundColor: NSColor.textColor,
+                                .paragraphStyle: NSParagraphStyle.default]
+        }
+    }
 
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
         super.insertText(insertString, replacementRange: replacementRange)

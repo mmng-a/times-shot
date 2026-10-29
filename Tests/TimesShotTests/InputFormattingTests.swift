@@ -1,11 +1,13 @@
 import AppKit
+import SwiftUI
 import Testing
 import TimesShotCore
 @testable import TimesShot
 
 @MainActor private func inputEditor() -> PostingTextView {
     _ = NSApplication.shared
-    let editor = PostingTextView(frame: .zero)
+    let editor = PostingTextView(usingTextLayoutManager: true)
+    editor.textContentStorage?.includesTextListMarkers = true
     editor.isRichText = true
     editor.allowsUndo = true
     editor.font = RichText.font
@@ -105,4 +107,44 @@ func typedDelimitersBecomeFormattingAndDoNotFormatFollowingText(_ input: String,
     undo.redo()
     #expect(editor.string == "test")
     #expect(RichText.slackText(AttributedString(editor.attributedString())) == "*test*")
+}
+
+@MainActor @Test(arguments: ["backspace", "delete"])
+func deletingAllTextResetsFormatting(_ operation: String) throws {
+    let editor = inputEditor()
+    editor.formatBold(nil)
+    editor.formatStrikethrough(nil)
+    type("before", in: editor)
+    editor.setSelectedRange(NSRange(location: 0, length: (editor.string as NSString).length))
+    if operation == "delete" { editor.delete(nil) } else { editor.deleteBackward(nil) }
+    #expect(editor.string.isEmpty)
+    type("after", in: editor)
+    #expect(RichText.slackText(AttributedString(editor.attributedString())) == "after")
+    editor.setSelectedRange(NSRange(location: 0, length: (editor.string as NSString).length))
+    editor.deleteBackward(nil)
+    editor.formatBold(nil)
+    type("bold", in: editor)
+    #expect(RichText.slackText(AttributedString(editor.attributedString())) == "*bold*")
+}
+
+@MainActor @Test func composerMatchesItsStoredListMarkerRepresentation() throws {
+    _ = NSApplication.shared
+    var text = ""
+    var richText: AttributedString?
+    let view = DraftEditor(text: Binding(get: { text }, set: { text = $0 }),
+                           richText: Binding(get: { richText }, set: { richText = $0 }),
+                           send: {}, discard: {}, addFiles: { _ in }, addImage: { _, _ in })
+    let host = NSHostingView(rootView: view)
+    host.frame = NSRect(x: 0, y: 0, width: 500, height: 260)
+    host.layoutSubtreeIfNeeded()
+    func findEditor(in view: NSView) -> PostingTextView? {
+        if let editor = view as? PostingTextView { return editor }
+        return view.subviews.lazy.compactMap { findEditor(in: $0) }.first
+    }
+    let editor = try #require(findEditor(in: host))
+    let storage = try #require(editor.textContentStorage)
+    #expect(storage.includesTextListMarkers)
+    type("- test", in: editor)
+    #expect(text == "•\ttest")
+    #expect(RichText.slackText(try #require(richText)) == "• test")
 }
