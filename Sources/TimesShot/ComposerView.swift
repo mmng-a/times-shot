@@ -53,7 +53,6 @@ private struct ComposerHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "number").foregroundStyle(.secondary)
             if isConfigured {
                 Picker("投稿先", selection: Binding(get: { selectedID }, set: selectChannel)) {
                     ForEach(channels) { channel in

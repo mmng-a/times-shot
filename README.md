@@ -18,7 +18,7 @@ bash scripts/build-app.sh
 1. Slackアプリの「OAuth & Permissions」で、**User Token Scopes**に`chat:write`と`files:write`を追加します。
 2. ワークスペースへインストールし、本人の**User OAuth Token**（`xoxp-`から始まるもの）を取得します。Bot Tokenは使用しません。
 3. 投稿先の各チャンネルへ本人が参加していることを確認し、チャンネル詳細からチャンネルIDをコピーします。
-4. Times Shotの設定にトークンと普段使うチャンネルのID・表示名を入力します。同じワークスペース内の別チャンネルは「追加の投稿先」に登録し、「接続を確認して保存」を選びます。接続確認では投稿しません。
+4. Times Shotの設定の「General」タブにトークンを入力します。「Channels」タブのリストで、普段使うチャンネルのID・表示名を入力し、同じワークスペース内の別チャンネルは「チャンネルを追加」で登録します。「接続を確認して保存」を選ぶと両方のタブの変更を保存します。接続確認では投稿しません。
 5. エラー通知を受け取るため、macOSの通知を許可してください。ログイン時起動は初回起動時に有効化を試み、設定から変更できます。OSの承認が必要な場合はシステム設定で許可してください。
 
 認証情報はKeychainに保存します。トークンを設定ファイルやログへ出力しません。接続方法の根拠は[chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)と[files.completeUploadExternal](https://docs.slack.dev/reference/methods/files.completeUploadExternal/)を参照してください。

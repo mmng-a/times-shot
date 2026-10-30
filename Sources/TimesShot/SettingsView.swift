@@ -15,42 +15,24 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Times Shot 設定").font(.title2).fontWeight(.semibold)
-            Form {
-                SlackSettingsFields(token: $token, channelID: $configuration.channelID,
-                                    channelName: $configuration.channelName)
-                AdditionalChannelSettings(channels: $configuration.additionalChannels,
-                                          remove: { configuration.removeAdditionalChannel($0) })
-                Section("操作") {
-                    LabeledContent("呼び出す／隠す") {
-                        ShortcutRecorder(label: configuration.shortcutLabel) { shortcut in
-                            configuration.keyCode = shortcut.keyCode
-                            configuration.modifiers = shortcut.modifiers
-                            configuration.shortcutLabel = shortcut.label
-                        }.frame(width: 150, height: 26)
+            TabView {
+                Tab("General", systemImage: "gearshape") {
+                    GeneralSettings(token: $token, shortcutLabel: configuration.shortcutLabel,
+                                    launchAtLogin: $launchAtLogin, message: $message) { shortcut in
+                        configuration.keyCode = shortcut.keyCode
+                        configuration.modifiers = shortcut.modifiers
+                        configuration.shortcutLabel = shortcut.label
                     }
-                    Toggle("ログイン時に起動", isOn: $launchAtLogin)
-                        .onChange(of: launchAtLogin) { _, enabled in
-                            do {
-                                if enabled, ![.enabled, .requiresApproval].contains(SMAppService.mainApp.status) {
-                                    try SMAppService.mainApp.register()
-                                } else if !enabled, SMAppService.mainApp.status != .notRegistered {
-                                    try SMAppService.mainApp.unregister()
-                                }
-                                UserDefaults.standard.set(true, forKey: "loginPreferenceChosen")
-                                message = SMAppService.mainApp.status == .requiresApproval
-                                    ? "自動起動はシステム設定で許可してください。" : ""
-                            } catch { message = error.localizedDescription }
-                        }
                 }
-            }.formStyle(.grouped).disabled(saving)
+                Tab("Channels", systemImage: "number") {
+                    ChannelSettings(channelID: $configuration.channelID, channelName: $configuration.channelName,
+                                    channels: $configuration.additionalChannels,
+                                    remove: { configuration.removeAdditionalChannel($0) })
+                }
+            }.disabled(saving)
             Text("\(configuration.workspace) \(configuration.username)").foregroundStyle(.secondary)
             if !message.isEmpty { Text(message).font(.callout).textSelection(.enabled) }
             HStack {
-                Button("通知設定") {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
                 Spacer()
                 Button(saving ? "接続を確認中…" : "接続を確認して保存") { Task { await save() } }
                     .buttonStyle(.borderedProminent).disabled(saving)
@@ -101,53 +83,103 @@ struct SettingsView: View {
     }
 }
 
-private struct SlackSettingsFields: View {
+private struct GeneralSettings: View {
     @Binding var token: String
-    @Binding var channelID: String
-    @Binding var channelName: String
+    let shortcutLabel: String
+    @Binding var launchAtLogin: Bool
+    @Binding var message: String
+    let recordShortcut: (RecordedShortcut) -> Void
 
     var body: some View {
-        Section("Slack") {
-            SecureField("User OAuth Token", text: $token)
-            TextField("普段のチャンネルID", text: $channelID)
-            TextField("普段のチャンネル名（表示用）", text: $channelName)
-            Text("User Token Scopesに chat:write と files:write を設定してください。トークンはKeychainに保存します。")
-                .font(.caption).foregroundStyle(.secondary)
-        }
+        Form {
+            Section("Slack") {
+                SecureField("User OAuth Token", text: $token)
+                Text("User Token Scopesに chat:write と files:write を設定してください。トークンはKeychainに保存します。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("操作") {
+                LabeledContent("呼び出す／隠す") {
+                    ShortcutRecorder(label: shortcutLabel, recorded: recordShortcut)
+                        .frame(width: 150, height: 26)
+                }
+                Toggle("ログイン時に起動", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, enabled in
+                        do {
+                            if enabled, ![.enabled, .requiresApproval].contains(SMAppService.mainApp.status) {
+                                try SMAppService.mainApp.register()
+                            } else if !enabled, SMAppService.mainApp.status != .notRegistered {
+                                try SMAppService.mainApp.unregister()
+                            }
+                            UserDefaults.standard.set(true, forKey: "loginPreferenceChosen")
+                            message = SMAppService.mainApp.status == .requiresApproval
+                                ? "自動起動はシステム設定で許可してください。" : ""
+                        } catch { message = error.localizedDescription }
+                    }
+                Button("通知設定") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+        }.formStyle(.grouped)
     }
 }
 
-private struct AdditionalChannelSettings: View {
+private struct ChannelSettings: View {
+    @Binding var channelID: String
+    @Binding var channelName: String
     @Binding var channels: [PostingChannel]
     let remove: (String) -> Void
 
     var body: some View {
-        Section("追加の投稿先") {
-            ForEach($channels) { $channel in
-                AdditionalChannelRow(channel: $channel, remove: { remove(channel.id) })
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Text("チャンネル名（表示用）").frame(maxWidth: .infinity, alignment: .leading)
+                Text("チャンネルID").frame(width: 130, alignment: .leading)
+                Color.clear.frame(width: 42, height: 1)
             }
+            .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
+            List {
+                ChannelSettingsRow(channelName: $channelName, channelID: $channelID, remove: nil)
+                ForEach($channels) { $channel in
+                    ChannelSettingsRow(channelName: $channel.name, channelID: $channel.channelID,
+                                       remove: { remove(channel.id) })
+                }
+            }
+            .listStyle(.bordered)
             Button("チャンネルを追加", systemImage: "plus") { channels.append(PostingChannel()) }
-            Text("投稿画面で切り替えられます。選んだ投稿先は、次回の投稿や再起動後も維持します。")
+            Text("「普段」のチャンネルには、投稿画面からすぐに戻れます。選んだ投稿先は、次回の投稿や再起動後も維持します。")
                 .font(.caption).foregroundStyle(.secondary)
         }
+        .padding(16)
     }
 }
 
-private struct AdditionalChannelRow: View {
-    @Binding var channel: PostingChannel
-    let remove: () -> Void
+private struct ChannelSettingsRow: View {
+    @Binding var channelName: String
+    @Binding var channelID: String
+    let remove: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 12) {
+            TextField("チャンネル名", text: $channelName)
+                .textFieldStyle(.plain).frame(maxWidth: .infinity)
+            TextField("チャンネルID", text: $channelID)
+                .textFieldStyle(.plain).frame(width: 130)
             HStack {
-                TextField("チャンネルID", text: $channel.channelID)
-                Button("削除", systemImage: "minus.circle", action: remove)
-                    .labelStyle(.iconOnly).buttonStyle(.borderless)
-                    .accessibilityLabel("\(channel.label.isEmpty ? "追加の投稿先" : channel.label)を削除")
+                if let remove {
+                    Button("削除", systemImage: "minus.circle", action: remove)
+                        .labelStyle(.iconOnly).buttonStyle(.borderless)
+                        .accessibilityLabel("\(channelName.isEmpty ? "投稿先" : channelName)を削除")
+                        .help("チャンネルを削除")
+                } else {
+                    Text("普段").font(.caption).foregroundStyle(.secondary)
+                        .help("普段の投稿先")
+                }
             }
-            TextField("チャンネル名（表示用）", text: $channel.name)
+            .frame(width: 42)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
     }
 }
 
