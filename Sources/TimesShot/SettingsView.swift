@@ -78,42 +78,51 @@ private struct GeneralSettings: View {
     }
 }
 
+private enum ChannelField: Hashable {
+    case name(String)
+    case channelID(String)
+
+    var channel: String {
+        switch self {
+        case .name(let id), .channelID(let id): id
+        }
+    }
+}
+
 private struct ChannelSettings: View {
     let settings: SettingsModel
     @State private var selection: String?
     @State private var editing: PostingChannel?
+    @State private var edits: [String: PostingChannel] = [:]
     @State private var error: String?
+    @FocusState private var focusedField: ChannelField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Text("チャンネル名（表示用）").frame(maxWidth: .infinity, alignment: .leading)
+                Text("チャンネルID").frame(width: 130, alignment: .leading)
+                Color.clear.frame(width: 42, height: 1)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .padding(.horizontal, 12).padding(.bottom, 8)
             List(selection: $selection) {
                 ForEach(settings.app.configuration.channels) { channel in
-                    ChannelRow(channel: channel).tag(channel.id)
-                        .contextMenu {
-                            Button("編集…") { editing = channel }
-                            Button("削除") { remove(channel.id) }
-                        }
+                    ChannelRow(channel: Binding(get: { edits[channel.id] ?? channel }, set: { edits[channel.id] = $0 }),
+                               focusedField: $focusedField, commit: { commit(channel.id) })
+                        .tag(channel.id)
+                        .contextMenu { Button("削除") { remove(channel.id) } }
                 }
             }
             .listStyle(.bordered)
             .accessibilityLabel("投稿先チャンネル")
             .onDeleteCommand { if let selection { remove(selection) } }
-            .onKeyPress(.return) {
-                guard let channel = settings.app.configuration.channels.first(where: { $0.id == selection }) else { return .ignored }
-                editing = channel
-                return .handled
-            }
             HStack(spacing: 0) {
                 ChannelListButtons(canRemove: selection != nil, add: add, remove: {
                     if let selection { remove(selection) }
                 })
                 .frame(width: 56, height: 24)
                 Spacer()
-                Button("編集…") {
-                    editing = settings.app.configuration.channels.first { $0.id == selection }
-                }
-                .disabled(selection == nil)
-                .controlSize(.small)
             }
             .padding(.top, 6)
             if let error {
@@ -127,6 +136,20 @@ private struct ChannelSettings: View {
         .sheet(item: $editing) { channel in
             ChannelEditor(settings: settings, channel: channel) { selection = channel.id }
         }
+        .onChange(of: focusedField) { previous, current in
+            if let previous, previous.channel != current?.channel { commit(previous.channel) }
+            if let current { selection = current.channel }
+        }
+        .onDisappear { for id in Array(edits.keys) { commit(id) } }
+    }
+
+    private func commit(_ id: String) {
+        guard let channel = edits[id], settings.app.configuration.channels.contains(where: { $0.id == id }) else { return }
+        do {
+            try settings.saveChannel(channel)
+            edits.removeValue(forKey: id)
+            error = nil
+        } catch { self.error = error.localizedDescription }
     }
 
     private func add() {
@@ -135,29 +158,41 @@ private struct ChannelSettings: View {
     }
 
     private func remove(_ id: String) {
+        let pending = edits.removeValue(forKey: id)
         do {
             try settings.removeChannel(id)
             selection = settings.app.configuration.channels.first?.id
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            edits[id] = pending
+            self.error = error.localizedDescription
+        }
     }
 }
 
 private struct ChannelRow: View {
-    let channel: PostingChannel
+    @Binding var channel: PostingChannel
+    let focusedField: FocusState<ChannelField?>.Binding
+    let commit: () -> Void
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: channel.label)
-                Text(verbatim: channel.channelID).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if channel.id == Configuration.defaultDestinationID {
-                Text("普段").font(.caption).foregroundStyle(.secondary)
-            }
+        HStack(spacing: 12) {
+            TextField("チャンネル名", text: $channel.name)
+                .textFieldStyle(.plain).frame(maxWidth: .infinity)
+                .focused(focusedField, equals: .name(channel.id))
+            TextField("チャンネルID", text: $channel.channelID)
+                .textFieldStyle(.plain).frame(width: 130)
+                .focused(focusedField, equals: .channelID(channel.id))
+            Group {
+                if channel.id == Configuration.defaultDestinationID {
+                    Text("普段").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Color.clear.frame(height: 1)
+                }
+            }.frame(width: 42)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
+        .onSubmit(commit)
     }
 }
 
