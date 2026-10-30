@@ -5,29 +5,93 @@ import Security
 import TimesShotCore
 import UniformTypeIdentifiers
 
+struct PostingChannel: Codable, Equatable, Identifiable {
+    let id: String
+    var channelID: String
+    var name: String
+
+    init(id: String = UUID().uuidString, channelID: String = "", name: String = "") {
+        self.id = id
+        self.channelID = channelID
+        self.name = name
+    }
+
+    var label: String {
+        name.isEmpty ? channelID : "#" + name.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+    }
+}
+
 struct Configuration: Codable, Equatable {
+    static let defaultDestinationID = "default"
     var channelID = ""
     var channelName = ""
+    var additionalChannels: [PostingChannel] = []
+    var selectedDestinationID = defaultDestinationID
     var workspace = ""
     var username = ""
     var keyCode = UInt32(kVK_Space)
     var modifiers = UInt32(shiftKey)
     var shortcutLabel = "⇧Space"
 
-    var destination: String {
-        channelName.isEmpty ? channelID : "#" + channelName.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+    var channels: [PostingChannel] {
+        [PostingChannel(id: Self.defaultDestinationID, channelID: channelID, name: channelName)] + additionalChannels
     }
 
-    var isConfigured: Bool { !channelID.isEmpty && !workspace.isEmpty }
+    var selectedChannel: PostingChannel? { channels.first { $0.id == selectedDestinationID } }
+    var destination: String { selectedChannel?.label ?? "" }
+    var isConfigured: Bool { selectedChannel?.channelID.isEmpty == false && !workspace.isEmpty }
 
-    static func load() -> Self {
-        guard let data = UserDefaults.standard.data(forKey: "configuration"),
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case channelID, channelName, additionalChannels, selectedDestinationID
+        case workspace, username, keyCode, modifiers, shortcutLabel
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        channelID = try values.decode(String.self, forKey: .channelID)
+        channelName = try values.decode(String.self, forKey: .channelName)
+        additionalChannels = try values.decodeIfPresent([PostingChannel].self, forKey: .additionalChannels) ?? []
+        selectedDestinationID = try values.decodeIfPresent(String.self, forKey: .selectedDestinationID) ?? Self.defaultDestinationID
+        workspace = try values.decode(String.self, forKey: .workspace)
+        username = try values.decode(String.self, forKey: .username)
+        keyCode = try values.decode(UInt32.self, forKey: .keyCode)
+        modifiers = try values.decode(UInt32.self, forKey: .modifiers)
+        shortcutLabel = try values.decode(String.self, forKey: .shortcutLabel)
+    }
+
+    mutating func validateChannels() throws {
+        channelID = channelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        channelName = channelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        additionalChannels = additionalChannels.map { channel in
+            var channel = channel
+            channel.channelID = channel.channelID.trimmingCharacters(in: .whitespacesAndNewlines)
+            channel.name = channel.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return channel
+        }
+        guard channels.allSatisfy({ $0.channelID.range(of: "^[CG][A-Z0-9]+$", options: .regularExpression) != nil }) else {
+            throw StorageError.message("すべての投稿先にチャンネルID（C…またはG…）を入力してください。")
+        }
+        guard Set(channels.map(\.channelID)).count == channels.count else {
+            throw StorageError.message("同じチャンネルが重複しています。")
+        }
+        guard selectedChannel != nil else { throw StorageError.message("選択中の投稿先が登録されていません。") }
+    }
+
+    mutating func removeAdditionalChannel(_ id: String) {
+        additionalChannels.removeAll { $0.id == id }
+        if selectedDestinationID == id { selectedDestinationID = Self.defaultDestinationID }
+    }
+
+    static func load(defaults: UserDefaults = .standard) -> Self {
+        guard let data = defaults.data(forKey: "configuration"),
               let value = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
         return value
     }
 
-    func save() throws {
-        UserDefaults.standard.set(try JSONEncoder().encode(self), forKey: "configuration")
+    func save(defaults: UserDefaults = .standard) throws {
+        defaults.set(try JSONEncoder().encode(self), forKey: "configuration")
     }
 }
 

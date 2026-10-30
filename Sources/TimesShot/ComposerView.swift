@@ -9,7 +9,10 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ComposerHeader(configuration: model.configuration, settings: settings)
+            ComposerHeader(channels: model.configuration.channels,
+                           selectedID: model.configuration.selectedDestinationID,
+                           workspace: model.configuration.workspace, isConfigured: model.configuration.isConfigured,
+                           selectChannel: model.selectChannel, settings: settings)
             Divider()
             DraftEditor(text: $model.draft.text, richText: $model.draft.richText, send: model.send, discard: {
                 model.discardDraft()
@@ -41,15 +44,29 @@ struct ComposerView: View {
 }
 
 private struct ComposerHeader: View {
-    let configuration: Configuration
+    let channels: [PostingChannel]
+    let selectedID: String
+    let workspace: String
+    let isConfigured: Bool
+    let selectChannel: @MainActor @Sendable (String) -> Void
     let settings: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "number").foregroundStyle(.secondary)
-            if configuration.isConfigured {
-                Text(configuration.destination).fontWeight(.semibold)
-                Text(configuration.workspace).foregroundStyle(.secondary).lineLimit(1)
+            if isConfigured {
+                Picker("投稿先", selection: Binding(get: { selectedID }, set: selectChannel)) {
+                    ForEach(channels) { channel in
+                        Text(verbatim: channel.label).tag(channel.id)
+                    }
+                }
+                .labelsHidden().pickerStyle(.menu).lineLimit(1)
+                .frame(maxWidth: 220)
+                if selectedID != Configuration.defaultDestinationID {
+                    Button("普段の投稿先へ") { selectChannel(Configuration.defaultDestinationID) }
+                        .controlSize(.small)
+                }
+                Text(verbatim: workspace).foregroundStyle(.secondary).lineLimit(1)
             } else {
                 Text("投稿先を設定してください").foregroundStyle(.secondary)
             }

@@ -5,12 +5,13 @@ import UserNotifications
 
 @MainActor @Observable
 final class AppModel {
-    var configuration = Configuration.load()
+    var configuration: Configuration
     var draft = Draft()
     var importing = false
     var latestError: String?
     var queue: PostingQueue!
     @ObservationIgnored let storage: DraftStorage
+    @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored var onAccepted: (() -> Void)?
     @ObservationIgnored var onStatusChange: (() -> Void)?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
@@ -18,13 +19,16 @@ final class AppModel {
     @ObservationIgnored private var lastStorageError: String?
     @ObservationIgnored var token = ""
 
-    init(storage: DraftStorage) {
+    init(storage: DraftStorage, defaults: UserDefaults = .standard,
+         readToken: @MainActor () throws -> String = TokenStore.read) {
         self.storage = storage
+        self.defaults = defaults
+        configuration = Configuration.load(defaults: defaults)
         do {
             draft = try storage.load()
             try storage.removeOrphans(keeping: draft.images)
         } catch { latestError = error.localizedDescription }
-        do { token = try TokenStore.read() } catch { latestError = error.localizedDescription }
+        do { token = try readToken() } catch { latestError = error.localizedDescription }
         let client = SlackClient()
         queue = PostingQueue(send: { post in
             try await client.send(post)
@@ -72,12 +76,24 @@ final class AppModel {
         if saveDraft() { storage.remove(images) }
     }
 
+    func selectChannel(_ id: String) {
+        guard id != configuration.selectedDestinationID,
+              configuration.channels.contains(where: { $0.id == id }), saveDraft() else { return }
+        var proposed = configuration
+        proposed.selectedDestinationID = id
+        do {
+            try proposed.save(defaults: defaults)
+            configuration = proposed
+            onStatusChange?()
+        } catch { notify(title: "投稿先を変更できませんでした", body: error.localizedDescription) }
+    }
+
     func send() {
-        guard canSend else { return }
+        guard canSend, let channel = configuration.selectedChannel else { return }
         let submitted = draft
         draft = Draft()
         guard saveDraft() else { draft = submitted; return }
-        queue.enqueue(PendingPost(draft: submitted, channelID: configuration.channelID, token: token))
+        queue.enqueue(PendingPost(draft: submitted, channelID: channel.channelID, token: token))
         onStatusChange?()
         onAccepted?()
     }
@@ -137,7 +153,7 @@ final class AppModel {
     func notifyFailure(_ draft: Draft, error: Error) {
         let unknown: Bool
         if case DeliveryError.unknown = error { unknown = true } else { unknown = false }
-        notify(title: unknown ? "timesへの投稿結果を確認できませんでした" : "timesへの投稿に失敗しました",
+        notify(title: unknown ? "Slackへの投稿結果を確認できませんでした" : "Slackへの投稿に失敗しました",
                body: draft.notificationSummary + "\n" + error.localizedDescription)
     }
 

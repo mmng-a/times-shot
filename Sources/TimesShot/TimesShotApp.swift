@@ -128,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         panel?.orderOut(nil)
         previousApp = nil
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 540),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
                                   styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = "Times Shot 設定"
             window.isReleasedWhenClosed = false

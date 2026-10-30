@@ -18,6 +18,8 @@ struct SettingsView: View {
             Form {
                 SlackSettingsFields(token: $token, channelID: $configuration.channelID,
                                     channelName: $configuration.channelName)
+                AdditionalChannelSettings(channels: $configuration.additionalChannels,
+                                          remove: { configuration.removeAdditionalChannel($0) })
                 Section("操作") {
                     LabeledContent("呼び出す／隠す") {
                         ShortcutRecorder(label: configuration.shortcutLabel) { shortcut in
@@ -67,24 +69,25 @@ struct SettingsView: View {
         defer { saving = false }
         let cleanToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
         var proposed = configuration
-        proposed.channelID = proposed.channelID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard cleanToken.hasPrefix("xoxp-") else { message = "User OAuth Token（xoxp-…）を入力してください。"; return }
-        guard proposed.channelID.range(of: "^[CG][A-Z0-9]+$", options: .regularExpression) != nil else {
-            message = "チャンネルID（C…またはG…）を入力してください。"; return
-        }
         do {
+            try proposed.validateChannels()
             let identity = try await SlackClient().identity(token: cleanToken)
             proposed.workspace = identity.team
             proposed.username = identity.user
+            let selectedID = model.configuration.selectedDestinationID
+            proposed.selectedDestinationID = proposed.channels.contains { $0.id == selectedID }
+                ? selectedID : Configuration.defaultDestinationID
             if !model.draft.isEmpty,
-               (proposed.channelID != model.configuration.channelID || proposed.workspace != model.configuration.workspace) {
-                message = "下書きがあります。送信するかEscで破棄してから、投稿先を変更してください。"
+               (proposed.selectedChannel?.channelID != model.configuration.selectedChannel?.channelID
+                || proposed.workspace != model.configuration.workspace) {
+                message = "下書きがあります。送信するかEscで破棄してから、選択中の投稿先を変更・削除してください。"
                 return
             }
             try applyShortcut(proposed)
             do {
                 try TokenStore.save(cleanToken)
-                try proposed.save()
+                try proposed.save(defaults: model.defaults)
             } catch {
                 try? applyShortcut(model.configuration)
                 throw error
@@ -106,11 +109,45 @@ private struct SlackSettingsFields: View {
     var body: some View {
         Section("Slack") {
             SecureField("User OAuth Token", text: $token)
-            TextField("チャンネルID", text: $channelID)
-            TextField("チャンネル名（表示用）", text: $channelName)
+            TextField("普段のチャンネルID", text: $channelID)
+            TextField("普段のチャンネル名（表示用）", text: $channelName)
             Text("User Token Scopesに chat:write と files:write を設定してください。トークンはKeychainに保存します。")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct AdditionalChannelSettings: View {
+    @Binding var channels: [PostingChannel]
+    let remove: (String) -> Void
+
+    var body: some View {
+        Section("追加の投稿先") {
+            ForEach($channels) { $channel in
+                AdditionalChannelRow(channel: $channel, remove: { remove(channel.id) })
+            }
+            Button("チャンネルを追加", systemImage: "plus") { channels.append(PostingChannel()) }
+            Text("投稿画面で切り替えられます。選んだ投稿先は、次回の投稿や再起動後も維持します。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct AdditionalChannelRow: View {
+    @Binding var channel: PostingChannel
+    let remove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("チャンネルID", text: $channel.channelID)
+                Button("削除", systemImage: "minus.circle", action: remove)
+                    .labelStyle(.iconOnly).buttonStyle(.borderless)
+                    .accessibilityLabel("\(channel.label.isEmpty ? "追加の投稿先" : channel.label)を削除")
+            }
+            TextField("チャンネル名（表示用）", text: $channel.name)
+        }
+        .padding(.vertical, 4)
     }
 }
 
