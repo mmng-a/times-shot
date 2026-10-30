@@ -5,98 +5,20 @@ import UniformTypeIdentifiers
 
 struct ComposerView: View {
     @Bindable var model: AppModel
-    let settings: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ComposerHeader(channels: model.configuration.channels,
-                           selectedID: model.configuration.selectedDestinationID,
-                           workspace: model.configuration.workspace, isConfigured: model.configuration.isConfigured,
-                           selectChannel: model.selectChannel, settings: settings)
-            Divider()
             DraftEditor(text: $model.draft.text, richText: $model.draft.richText, send: model.send, discard: {
                 model.discardDraft()
                 model.onAccepted?()
             }, addFiles: model.addFiles, addImage: model.addImage)
-            .padding(.horizontal, 14)
             if !model.draft.images.isEmpty {
                 AttachmentStrip(images: model.draft.images, remove: model.removeImage)
             }
-            Divider()
-            ComposerFooter(canSend: model.canSend, importing: model.importing,
-                           chooseFiles: chooseFiles, send: model.send)
         }
-        .frame(minWidth: 460, minHeight: 270)
+        .background(Color(nsColor: .textBackgroundColor))
+        .frame(minWidth: 460, minHeight: 240)
         .onChange(of: model.draft) { _, _ in model.changed() }
-    }
-
-    private func chooseFiles() {
-        let picker = NSOpenPanel()
-        picker.allowedContentTypes = [.image]
-        picker.allowsMultipleSelection = true
-        picker.canChooseDirectories = false
-        picker.prompt = "添付"
-        guard let window = NSApp.keyWindow else { return }
-        picker.beginSheetModal(for: window) { response in
-            if response == .OK { model.addFiles(picker.urls) }
-        }
-    }
-}
-
-private struct ComposerHeader: View {
-    let channels: [PostingChannel]
-    let selectedID: String
-    let workspace: String
-    let isConfigured: Bool
-    let selectChannel: @MainActor @Sendable (String) -> Void
-    let settings: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if isConfigured {
-                Picker("投稿先", selection: Binding(get: { selectedID }, set: selectChannel)) {
-                    ForEach(channels) { channel in
-                        Text(verbatim: channel.label).tag(channel.id)
-                    }
-                }
-                .labelsHidden().pickerStyle(.menu).lineLimit(1)
-                .frame(maxWidth: 220)
-                if selectedID != Configuration.defaultDestinationID {
-                    Button("普段の投稿先へ") { selectChannel(Configuration.defaultDestinationID) }
-                        .controlSize(.small)
-                }
-                Text(verbatim: workspace).foregroundStyle(.secondary).lineLimit(1)
-            } else {
-                Text("投稿先を設定してください").foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button(action: settings) { Image(systemName: "gearshape") }
-                .buttonStyle(.borderless).help("設定…")
-                .accessibilityLabel("設定を開く")
-        }
-        .padding(.horizontal, 18).padding(.vertical, 12)
-    }
-}
-
-private struct ComposerFooter: View {
-    let canSend: Bool
-    let importing: Bool
-    let chooseFiles: () -> Void
-    let send: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: chooseFiles) { Image(systemName: "photo.badge.plus") }
-                .buttonStyle(.borderless).help("画像を添付…")
-                .accessibilityLabel("画像を添付")
-                .disabled(importing)
-            Text(importing ? "画像を読み込み中…" : "Escで破棄 · ⌘Wで保存")
-                .font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("送信", action: send).keyboardShortcut(.return, modifiers: .command)
-                .buttonStyle(.borderedProminent).disabled(!canSend)
-        }
-        .padding(.horizontal, 18).padding(.vertical, 12)
     }
 }
 

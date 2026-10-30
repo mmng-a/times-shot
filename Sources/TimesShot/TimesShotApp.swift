@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import ServiceManagement
 import SwiftUI
 import UserNotifications
@@ -13,24 +14,46 @@ struct TimesShotApp: App {
                 CommandGroup(replacing: .appSettings) {
                     Button("設定…") { delegate.showSettings() }.keyboardShortcut(",")
                 }
+                CommandMenu("投稿") {
+                    Button("送信") { delegate.sendPost() }
+                        .keyboardShortcut(.return, modifiers: .command).disabled(!delegate.canSend)
+                    Button("画像を添付…") { delegate.attachImages() }
+                        .keyboardShortcut("a", modifiers: [.command, .shift]).disabled(delegate.importing)
+                    Menu("投稿先") {
+                        ForEach(delegate.channels) { channel in
+                            Toggle(isOn: Binding(get: { delegate.selectedChannelID == channel.id }, set: {
+                                if $0 { delegate.selectChannel(channel.id) }
+                            })) { Text(verbatim: channel.label) }
+                        }
+                    }.disabled(delegate.channels.isEmpty)
+                }
             }
     }
 }
 
-private final class ComposerPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-}
-
-@MainActor
+@MainActor @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
     private var model: AppModel!
-    private var panel: NSPanel?
+    private var composerController: ComposerWindowController?
+    private var panel: NSPanel? { composerController?.window as? NSPanel }
     private var settingsWindow: NSWindow?
     private var previousApp: NSRunningApplication?
     private var statusItem: NSStatusItem!
     private let hotKey = GlobalHotKey()
     private var activeShortcut: (UInt32, UInt32)?
+
+    var canSend: Bool { model?.canSend == true }
+    var importing: Bool { model?.importing == true }
+    var channels: [PostingChannel] { model?.configuration.channels ?? [] }
+    var selectedChannelID: String? { model?.configuration.selectedDestinationID }
+
+    func sendPost() { model?.send() }
+    func selectChannel(_ id: String) { model?.selectChannel(id) }
+    func attachImages() {
+        guard model != nil else { return }
+        if panel?.isVisible != true { showComposer() }
+        composerController?.chooseFiles()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -77,19 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private func showComposer() {
         previousApp = NSWorkspace.shared.frontmostApplication
         if panel == nil {
-            let window = ComposerPanel(contentRect: NSRect(x: 0, y: 0, width: 540, height: 340),
-                                       styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = "Times Shot"
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.isReleasedWhenClosed = false
-            window.isFloatingPanel = true
-            window.hidesOnDeactivate = false
-            window.level = .floating
-            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-            window.delegate = self
-            window.contentView = NSHostingView(rootView: ComposerView(model: model, settings: { [weak self] in self?.showSettings() }))
-            panel = window
+            composerController = ComposerWindowController(model: model)
+            panel?.delegate = self
         }
         guard let panel else { return }
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main

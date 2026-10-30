@@ -35,6 +35,65 @@ private func identity(team: String = "Workspace") throws -> SlackIdentity {
     ]))
 }
 
+@MainActor @Test func addingAChannelCreatesAnInlineDraftWithoutRegisteringAnEmptyDestination() throws {
+    let fixture = try SettingsFixture()
+    defer { fixture.cleanup() }
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
+    let id = settings.startAddingChannel()
+    #expect(settings.channels.count == 1)
+    #expect(settings.startAddingChannel() == id)
+    #expect(fixture.app.configuration.channels.isEmpty)
+    settings.channelEdits[id] = PostingChannel(id: id, name: "times")
+    try settings.commitChannel(id)
+    #expect(fixture.app.configuration.channels.isEmpty)
+    settings.channelEdits[id]?.channelID = "C00000001"
+    try settings.commitChannel(id)
+    #expect(settings.newChannel == nil)
+    #expect(Configuration.load(defaults: fixture.app.defaults).channels.first?.label == "#times")
+    let next = settings.startAddingChannel()
+    try settings.removeChannel(next)
+    #expect(settings.channels.count == 1)
+    #expect(fixture.app.configuration.channels.count == 1)
+}
+
+@MainActor @Test func composerToolbarUsesNativeControlsAndTracksPostingState() async throws {
+    _ = NSApplication.shared
+    let fixture = try SettingsFixture(connected: true)
+    defer { fixture.cleanup() }
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
+    let extra = PostingChannel(channelID: "C00000002", name: "project")
+    try settings.saveChannel(extra)
+    let controller = ComposerWindowController(model: fixture.app)
+    let window = try #require(controller.window)
+    defer { window.close() }
+    #expect(window.toolbarStyle == .unified)
+    #expect(window.title == "新規投稿")
+    #expect(controller.sendItem.style == .prominent)
+    #expect(!controller.sendItem.isEnabled)
+    #expect(controller.channelPicker.numberOfItems == 2)
+    fixture.app.draft = Draft(text: "本文")
+    await Task.yield()
+    #expect(controller.sendItem.isEnabled)
+    controller.channelPicker.selectItem(at: 1)
+    controller.channelPicker.sendAction(controller.channelPicker.action, to: controller.channelPicker.target)
+    #expect(fixture.app.configuration.selectedDestinationID == extra.id)
+    fixture.app.importing = true
+    await Task.yield()
+    #expect(!controller.sendItem.isEnabled)
+    #expect(!controller.attachmentItem.isEnabled)
+    #expect(!window.isVisible)
+}
+
+@MainActor @Test func settingsPaneTitlesAreLocalizedInJapaneseAndEnglish() throws {
+    let fixture = try SettingsFixture()
+    defer { fixture.cleanup() }
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
+    let japanese = SettingsViewController(settings: settings, locale: Locale(identifier: "ja"))
+    let english = SettingsViewController(settings: settings, locale: Locale(identifier: "en"))
+    #expect(japanese.tabViewItems.map(\.label) == ["一般", "チャンネル"])
+    #expect(english.tabViewItems.map(\.label) == ["General", "Channels"])
+}
+
 @MainActor @Test func channelChangesSaveWithoutAConnectionAndProtectDrafts() throws {
     let fixture = try SettingsFixture()
     defer { fixture.cleanup() }
@@ -97,20 +156,44 @@ private func identity(team: String = "Workspace") throws -> SlackIdentity {
     #expect(fixture.app.configuration.workspace == "Workspace")
 }
 
-@MainActor @Test func settingsUseTheNativePreferencesToolbar() async throws {
+@MainActor @Test func settingsUseLocalizedToolbarAndAddChannelsWithoutASheet() async throws {
     _ = NSApplication.shared
     let fixture = try SettingsFixture(connected: true)
     defer { fixture.cleanup() }
     let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
     try settings.saveChannel(PostingChannel(channelID: "C00000002", name: "project"))
-    let controller = SettingsViewController(settings: settings)
+    let controller = SettingsViewController(settings: settings, locale: Locale(identifier: "ja"))
     let window = controller.makeWindow()
     defer { window.close() }
     #expect(controller.tabStyle == .toolbar)
-    #expect(controller.tabViewItems.map(\.label) == ["General", "Channels"])
+    #expect(controller.tabViewItems.map(\.label) == ["一般", "チャンネル"])
     #expect(window.toolbarStyle == .preference)
     #expect(window.toolbar != nil)
     #expect(!window.isVisible)
+
+    controller.selectedTabViewItemIndex = 1
+    try await Task.sleep(for: .milliseconds(100))
+    func findAddControl(in view: NSView) -> NSSegmentedControl? {
+        if let control = view as? NSSegmentedControl,
+           control.segmentCount == 2, control.toolTip(forSegment: 0) == "チャンネルを追加" { return control }
+        for child in view.subviews {
+            if let control = findAddControl(in: child) { return control }
+        }
+        return nil
+    }
+    let content = try #require(window.contentView)
+    let addControl = try #require(findAddControl(in: content))
+    #expect(addControl.trackingMode == .momentary)
+    addControl.trackingMode = .selectOne
+    addControl.selectedSegment = 0
+    #expect(addControl.sendAction(addControl.action, to: addControl.target))
+    addControl.selectedSegment = -1
+    addControl.trackingMode = .momentary
+    await Task.yield()
+    #expect(settings.newChannel != nil)
+    #expect(settings.channels.count == 3)
+    #expect(fixture.app.configuration.channels.count == 2)
+    #expect(window.attachedSheet == nil)
 
     if let path = ProcessInfo.processInfo.environment["TIMES_SHOT_UI_PREVIEW_DIR"] {
         let directory = URL(filePath: path, directoryHint: .isDirectory)
@@ -131,11 +214,13 @@ private func identity(team: String = "Workspace") throws -> SlackIdentity {
                 try capture(window, filename: "\(index)-\(name).png")
             }
         }
-        let composer = NSWindow(contentViewController: NSHostingController(rootView: ComposerView(model: fixture.app, settings: {})))
-        composer.isReleasedWhenClosed = false
-        composer.setContentSize(NSSize(width: 540, height: 340))
-        defer { composer.close() }
-        try await Task.sleep(for: .milliseconds(100))
-        try capture(composer, filename: "composer.png")
+        let composer = ComposerWindowController(model: fixture.app)
+        let composerWindow = try #require(composer.window)
+        defer { composerWindow.close() }
+        for (appearance, name) in [(NSAppearance.Name.aqua, "light"), (.darkAqua, "dark")] {
+            composerWindow.appearance = NSAppearance(named: appearance)
+            try await Task.sleep(for: .milliseconds(100))
+            try capture(composerWindow, filename: "composer-\(name).png")
+        }
     }
 }

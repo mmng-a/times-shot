@@ -10,6 +10,8 @@ final class SettingsModel {
     var checkingConnection = false
     var connectionError: String?
     var generalError: String?
+    var newChannel: PostingChannel?
+    var channelEdits: [String: PostingChannel] = [:]
     var launchAtLogin = [.enabled, .requiresApproval].contains(SMAppService.mainApp.status)
     @ObservationIgnored private(set) var tokenTask: Task<Void, Never>?
     @ObservationIgnored private let authenticate: @Sendable (String) async throws -> SlackIdentity
@@ -107,9 +109,35 @@ final class SettingsModel {
         try app.updateConfiguration(proposed)
     }
 
+    var channels: [PostingChannel] {
+        app.configuration.channels + (newChannel.map { [$0] } ?? [])
+    }
+
+    func startAddingChannel() -> String {
+        if let newChannel { return newChannel.id }
+        let id = app.configuration.channels.isEmpty ? Configuration.defaultDestinationID : UUID().uuidString
+        newChannel = PostingChannel(id: id)
+        return id
+    }
+
+    func commitChannel(_ id: String) throws {
+        guard let channel = channelEdits[id], channels.contains(where: { $0.id == id }) else { return }
+        if newChannel?.id == id, channel.channelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
+        try saveChannel(channel)
+        if newChannel?.id == id { newChannel = nil }
+        channelEdits.removeValue(forKey: id)
+    }
+
     func removeChannel(_ id: String) throws {
+        if newChannel?.id == id {
+            newChannel = nil
+            channelEdits.removeValue(forKey: id)
+            return
+        }
+        let pending = channelEdits.removeValue(forKey: id)
         var proposed = app.configuration
         proposed.removeChannel(id)
-        try app.updateConfiguration(proposed)
+        do { try app.updateConfiguration(proposed) }
+        catch { channelEdits[id] = pending; throw error }
     }
 }

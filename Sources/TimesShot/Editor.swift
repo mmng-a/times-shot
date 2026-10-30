@@ -32,7 +32,8 @@ struct DraftEditor: NSViewRepresentable {
         editor.font = RichText.font
         editor.textColor = .textColor
         editor.drawsBackground = false
-        editor.textContainerInset = NSSize(width: 4, height: 10)
+        editor.textContainerInset = NSSize(width: 16, height: 14)
+        editor.setAccessibilityLabel("投稿本文")
         editor.isVerticallyResizable = true
         editor.isHorizontallyResizable = false
         editor.autoresizingMask = [.width]

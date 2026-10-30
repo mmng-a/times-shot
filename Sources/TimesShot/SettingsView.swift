@@ -3,15 +3,15 @@ import SwiftUI
 
 @MainActor
 final class SettingsViewController: NSTabViewController {
-    init(settings: SettingsModel) {
+    init(settings: SettingsModel, locale: Locale = .current) {
         super.init(nibName: nil, bundle: nil)
         tabStyle = .toolbar
         preferredContentSize = NSSize(width: 520, height: 420)
         let general = NSHostingController(rootView: GeneralSettings(settings: settings))
-        general.title = "General"
+        general.title = String(localized: LocalizedStringResource("General", locale: locale, bundle: .atURL(Bundle.module.bundleURL)))
         general.preferredContentSize = preferredContentSize
         let channels = NSHostingController(rootView: ChannelSettings(settings: settings))
-        channels.title = "Channels"
+        channels.title = String(localized: LocalizedStringResource("Channels", locale: locale, bundle: .atURL(Bundle.module.bundleURL)))
         channels.preferredContentSize = preferredContentSize
         for (controller, symbol) in [(general as NSViewController, "gearshape"), (channels, "number")] {
             let item = NSTabViewItem(viewController: controller)
@@ -92,8 +92,6 @@ private enum ChannelField: Hashable {
 private struct ChannelSettings: View {
     let settings: SettingsModel
     @State private var selection: String?
-    @State private var editing: PostingChannel?
-    @State private var edits: [String: PostingChannel] = [:]
     @State private var error: String?
     @FocusState private var focusedField: ChannelField?
 
@@ -102,13 +100,12 @@ private struct ChannelSettings: View {
             HStack(spacing: 12) {
                 Text("チャンネル名（表示用）").frame(maxWidth: .infinity, alignment: .leading)
                 Text("チャンネルID").frame(width: 130, alignment: .leading)
-                Color.clear.frame(width: 42, height: 1)
             }
             .font(.caption).foregroundStyle(.secondary)
             .padding(.horizontal, 12).padding(.bottom, 8)
             List(selection: $selection) {
-                ForEach(settings.app.configuration.channels) { channel in
-                    ChannelRow(channel: Binding(get: { edits[channel.id] ?? channel }, set: { edits[channel.id] = $0 }),
+                ForEach(settings.channels) { channel in
+                    ChannelRow(channel: Binding(get: { settings.channelEdits[channel.id] ?? channel }, set: { settings.channelEdits[channel.id] = $0 }),
                                focusedField: $focusedField, commit: { commit(channel.id) })
                         .tag(channel.id)
                         .contextMenu { Button("削除") { remove(channel.id) } }
@@ -128,43 +125,37 @@ private struct ChannelSettings: View {
             if let error {
                 Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled).padding(.top, 8)
             }
-            Text("選んだ投稿先は次回も維持します。「普段」のチャンネルには投稿画面から戻れます。")
+            Text("投稿画面で選んだチャンネルは、次回も維持します。")
                 .font(.caption).foregroundStyle(.secondary).padding(.top, 12)
         }
         .padding(20)
         .frame(width: 520, height: 420)
-        .sheet(item: $editing) { channel in
-            ChannelEditor(settings: settings, channel: channel) { selection = channel.id }
-        }
         .onChange(of: focusedField) { previous, current in
             if let previous, previous.channel != current?.channel { commit(previous.channel) }
             if let current { selection = current.channel }
         }
-        .onDisappear { for id in Array(edits.keys) { commit(id) } }
+        .onDisappear { for id in Array(settings.channelEdits.keys) { commit(id) } }
     }
 
     private func commit(_ id: String) {
-        guard let channel = edits[id], settings.app.configuration.channels.contains(where: { $0.id == id }) else { return }
         do {
-            try settings.saveChannel(channel)
-            edits.removeValue(forKey: id)
+            try settings.commitChannel(id)
             error = nil
         } catch { self.error = error.localizedDescription }
     }
 
     private func add() {
-        let id = settings.app.configuration.channels.isEmpty ? Configuration.defaultDestinationID : UUID().uuidString
-        editing = PostingChannel(id: id)
+        let id = settings.startAddingChannel()
+        selection = id
+        focusedField = .name(id)
     }
 
     private func remove(_ id: String) {
-        let pending = edits.removeValue(forKey: id)
         do {
             try settings.removeChannel(id)
             selection = settings.app.configuration.channels.first?.id
             error = nil
         } catch {
-            edits[id] = pending
             self.error = error.localizedDescription
         }
     }
@@ -183,54 +174,9 @@ private struct ChannelRow: View {
             TextField("チャンネルID", text: $channel.channelID)
                 .textFieldStyle(.plain).frame(width: 130)
                 .focused(focusedField, equals: .channelID(channel.id))
-            Group {
-                if channel.id == Configuration.defaultDestinationID {
-                    Text("普段").font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Color.clear.frame(height: 1)
-                }
-            }.frame(width: 42)
         }
         .padding(.vertical, 5)
         .onSubmit(commit)
-    }
-}
-
-private struct ChannelEditor: View {
-    let settings: SettingsModel
-    let completed: () -> Void
-    @State private var channel: PostingChannel
-    @State private var error: String?
-    @Environment(\.dismiss) private var dismiss
-    @FocusState private var focused: Bool
-
-    init(settings: SettingsModel, channel: PostingChannel, completed: @escaping () -> Void) {
-        self.settings = settings
-        self.completed = completed
-        _channel = State(initialValue: channel)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("チャンネル").font(.headline)
-            Form {
-                TextField("チャンネル名", text: $channel.name).focused($focused)
-                TextField("チャンネルID", text: $channel.channelID)
-            }
-            if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
-            HStack {
-                Spacer()
-                Button("キャンセル") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("完了") {
-                    do { try settings.saveChannel(channel); completed(); dismiss() }
-                    catch { self.error = error.localizedDescription }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(channel.channelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24).frame(width: 400)
-        .onAppear { focused = true }
     }
 }
 
