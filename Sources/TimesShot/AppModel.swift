@@ -17,7 +17,7 @@ final class AppModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var importTask: Task<Void, Never>?
     @ObservationIgnored private var lastStorageError: String?
-    @ObservationIgnored var token = ""
+    var token = ""
 
     init(storage: DraftStorage, defaults: UserDefaults = .standard,
          readToken: @MainActor () throws -> String = TokenStore.read) {
@@ -86,6 +86,20 @@ final class AppModel {
             configuration = proposed
             onStatusChange?()
         } catch { notify(title: "投稿先を変更できませんでした", body: error.localizedDescription) }
+    }
+
+    func updateConfiguration(_ proposed: Configuration) throws {
+        try validateConfigurationChange(proposed)
+        try proposed.save(defaults: defaults)
+        configuration = proposed
+        onStatusChange?()
+    }
+
+    func validateConfigurationChange(_ proposed: Configuration) throws {
+        guard draft.isEmpty || (proposed.selectedChannel?.channelID == configuration.selectedChannel?.channelID
+                               && proposed.workspace == configuration.workspace) else {
+            throw StorageError.message("下書きがあります。送信するか破棄してから、選択中の投稿先やワークスペースを変更してください。")
+        }
     }
 
     func send() {

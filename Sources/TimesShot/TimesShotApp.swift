@@ -128,13 +128,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         panel?.orderOut(nil)
         previousApp = nil
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
-                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = "Times Shot 設定"
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: SettingsView(model: model, applyShortcut: { [weak self] config in
+            let settings = SettingsModel(app: model, applyShortcut: { [weak self] config in
                 try self?.applyShortcut(config)
-            }))
+            })
+            let window = SettingsViewController(settings: settings).makeWindow()
             window.center()
             settingsWindow = window
         }
@@ -150,11 +147,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         statusItem.button?.title = count > 0 ? " \(count)" : ""
         statusItem.button?.toolTip = count > 0 ? "Times Shot：\(count)件を送信中・送信待ち" : "Times Shot"
         let menu = NSMenu()
-        let post = menu.addItem(withTitle: "投稿する（\(model.configuration.shortcutLabel)）", action: #selector(toggleComposer), keyEquivalent: "")
+        let post = menu.addItem(withTitle: "投稿する", action: #selector(toggleComposer), keyEquivalent: "")
+        post.toolTip = model.configuration.shortcutLabel
         post.target = self
         if count > 0 { menu.addItem(withTitle: "送信中・送信待ち：\(count)件", action: nil, keyEquivalent: "") }
         if let error = model.latestError {
-            let latest = menu.addItem(withTitle: String(error.prefix(220)), action: nil, keyEquivalent: "")
+            let latest = menu.addItem(withTitle: error.components(separatedBy: "\n")[0], action: nil, keyEquivalent: "")
             latest.toolTip = error
             let clear = menu.addItem(withTitle: "エラー表示を消す", action: #selector(clearError), keyEquivalent: "")
             clear.target = self

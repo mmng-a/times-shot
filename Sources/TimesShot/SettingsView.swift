@@ -1,185 +1,239 @@
 import AppKit
-import ServiceManagement
 import SwiftUI
-import TimesShotCore
 
-struct SettingsView: View {
-    let model: AppModel
-    let applyShortcut: (Configuration) throws -> Void
-    @State private var configuration = Configuration()
-    @State private var token = ""
-    @State private var message = ""
-    @State private var saving = false
-    @State private var launchAtLogin = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Times Shot 設定").font(.title2).fontWeight(.semibold)
-            TabView {
-                Tab("General", systemImage: "gearshape") {
-                    GeneralSettings(token: $token, shortcutLabel: configuration.shortcutLabel,
-                                    launchAtLogin: $launchAtLogin, message: $message) { shortcut in
-                        configuration.keyCode = shortcut.keyCode
-                        configuration.modifiers = shortcut.modifiers
-                        configuration.shortcutLabel = shortcut.label
-                    }
-                }
-                Tab("Channels", systemImage: "number") {
-                    ChannelSettings(channelID: $configuration.channelID, channelName: $configuration.channelName,
-                                    channels: $configuration.additionalChannels,
-                                    remove: { configuration.removeAdditionalChannel($0) })
-                }
-            }.disabled(saving)
-            Text("\(configuration.workspace) \(configuration.username)").foregroundStyle(.secondary)
-            if !message.isEmpty { Text(message).font(.callout).textSelection(.enabled) }
-            HStack {
-                Spacer()
-                Button(saving ? "接続を確認中…" : "接続を確認して保存") { Task { await save() } }
-                    .buttonStyle(.borderedProminent).disabled(saving)
-            }
-        }
-        .padding(24).frame(width: 520)
-        .onAppear {
-            configuration = model.configuration
-            launchAtLogin = [.enabled, .requiresApproval].contains(SMAppService.mainApp.status)
-            do { token = try TokenStore.read() } catch { message = error.localizedDescription }
+@MainActor
+final class SettingsViewController: NSTabViewController {
+    init(settings: SettingsModel) {
+        super.init(nibName: nil, bundle: nil)
+        tabStyle = .toolbar
+        preferredContentSize = NSSize(width: 520, height: 420)
+        let general = NSHostingController(rootView: GeneralSettings(settings: settings))
+        general.title = "General"
+        general.preferredContentSize = preferredContentSize
+        let channels = NSHostingController(rootView: ChannelSettings(settings: settings))
+        channels.title = "Channels"
+        channels.preferredContentSize = preferredContentSize
+        for (controller, symbol) in [(general as NSViewController, "gearshape"), (channels, "number")] {
+            let item = NSTabViewItem(viewController: controller)
+            item.label = controller.title ?? ""
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: item.label)
+            addTabViewItem(item)
         }
     }
 
-    private func save() async {
-        saving = true
-        defer { saving = false }
-        let cleanToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        var proposed = configuration
-        guard cleanToken.hasPrefix("xoxp-") else { message = "User OAuth Token（xoxp-…）を入力してください。"; return }
-        do {
-            try proposed.validateChannels()
-            let identity = try await SlackClient().identity(token: cleanToken)
-            proposed.workspace = identity.team
-            proposed.username = identity.user
-            let selectedID = model.configuration.selectedDestinationID
-            proposed.selectedDestinationID = proposed.channels.contains { $0.id == selectedID }
-                ? selectedID : Configuration.defaultDestinationID
-            if !model.draft.isEmpty,
-               (proposed.selectedChannel?.channelID != model.configuration.selectedChannel?.channelID
-                || proposed.workspace != model.configuration.workspace) {
-                message = "下書きがあります。送信するかEscで破棄してから、選択中の投稿先を変更・削除してください。"
-                return
-            }
-            try applyShortcut(proposed)
-            do {
-                try TokenStore.save(cleanToken)
-                try proposed.save(defaults: model.defaults)
-            } catch {
-                try? applyShortcut(model.configuration)
-                throw error
-            }
-            configuration = proposed
-            model.configuration = proposed
-            model.token = cleanToken
-            model.onStatusChange?()
-            message = "保存しました。投稿先：\(proposed.destination)"
-        } catch { message = error.localizedDescription }
+    required init?(coder: NSCoder) { nil }
+
+    func makeWindow() -> NSWindow {
+        let window = NSWindow(contentViewController: self)
+        window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
+        window.tabbingMode = .disallowed
+        window.isReleasedWhenClosed = false
+        window.toolbar?.allowsUserCustomization = false
+        return window
     }
 }
 
 private struct GeneralSettings: View {
-    @Binding var token: String
-    let shortcutLabel: String
-    @Binding var launchAtLogin: Bool
-    @Binding var message: String
-    let recordShortcut: (RecordedShortcut) -> Void
+    @Bindable var settings: SettingsModel
 
     var body: some View {
         Form {
             Section("Slack") {
-                SecureField("User OAuth Token", text: $token)
-                Text("User Token Scopesに chat:write と files:write を設定してください。トークンはKeychainに保存します。")
+                SecureField("User OAuth Token", text: $settings.tokenInput)
+                if settings.checkingConnection {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("接続を確認中…").foregroundStyle(.secondary)
+                    }
+                } else if let error = settings.connectionError {
+                    Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                } else if !settings.app.token.isEmpty {
+                    LabeledContent("アカウント") {
+                        Text(verbatim: settings.app.configuration.username + " / " + settings.app.configuration.workspace)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("User Token Scopesにchat:writeとfiles:writeが必要です。認証情報はKeychainに保存します。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("操作") {
                 LabeledContent("呼び出す／隠す") {
-                    ShortcutRecorder(label: shortcutLabel, recorded: recordShortcut)
+                    ShortcutRecorder(label: settings.app.configuration.shortcutLabel, recorded: settings.setShortcut)
                         .frame(width: 150, height: 26)
                 }
-                Toggle("ログイン時に起動", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, enabled in
-                        do {
-                            if enabled, ![.enabled, .requiresApproval].contains(SMAppService.mainApp.status) {
-                                try SMAppService.mainApp.register()
-                            } else if !enabled, SMAppService.mainApp.status != .notRegistered {
-                                try SMAppService.mainApp.unregister()
-                            }
-                            UserDefaults.standard.set(true, forKey: "loginPreferenceChosen")
-                            message = SMAppService.mainApp.status == .requiresApproval
-                                ? "自動起動はシステム設定で許可してください。" : ""
-                        } catch { message = error.localizedDescription }
-                    }
-                Button("通知設定") {
+                Toggle("ログイン時に起動", isOn: Binding(get: { settings.launchAtLogin }, set: { settings.setLaunchAtLogin($0) }))
+                Button("通知設定…") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
                         NSWorkspace.shared.open(url)
                     }
                 }
+                if let error = settings.generalError {
+                    Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+                }
             }
-        }.formStyle(.grouped)
+        }
+        .formStyle(.grouped)
+        .frame(width: 520, height: 420)
     }
 }
 
 private struct ChannelSettings: View {
-    @Binding var channelID: String
-    @Binding var channelName: String
-    @Binding var channels: [PostingChannel]
-    let remove: (String) -> Void
+    let settings: SettingsModel
+    @State private var selection: String?
+    @State private var editing: PostingChannel?
+    @State private var error: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Text("チャンネル名（表示用）").frame(maxWidth: .infinity, alignment: .leading)
-                Text("チャンネルID").frame(width: 130, alignment: .leading)
-                Color.clear.frame(width: 42, height: 1)
-            }
-            .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
-            List {
-                ChannelSettingsRow(channelName: $channelName, channelID: $channelID, remove: nil)
-                ForEach($channels) { $channel in
-                    ChannelSettingsRow(channelName: $channel.name, channelID: $channel.channelID,
-                                       remove: { remove(channel.id) })
+        VStack(alignment: .leading, spacing: 0) {
+            List(selection: $selection) {
+                ForEach(settings.app.configuration.channels) { channel in
+                    ChannelRow(channel: channel).tag(channel.id)
+                        .contextMenu {
+                            Button("編集…") { editing = channel }
+                            Button("削除") { remove(channel.id) }
+                        }
                 }
             }
             .listStyle(.bordered)
-            Button("チャンネルを追加", systemImage: "plus") { channels.append(PostingChannel()) }
-            Text("「普段」のチャンネルには、投稿画面からすぐに戻れます。選んだ投稿先は、次回の投稿や再起動後も維持します。")
-                .font(.caption).foregroundStyle(.secondary)
+            .accessibilityLabel("投稿先チャンネル")
+            .onDeleteCommand { if let selection { remove(selection) } }
+            .onKeyPress(.return) {
+                guard let channel = settings.app.configuration.channels.first(where: { $0.id == selection }) else { return .ignored }
+                editing = channel
+                return .handled
+            }
+            HStack(spacing: 0) {
+                ChannelListButtons(canRemove: selection != nil, add: add, remove: {
+                    if let selection { remove(selection) }
+                })
+                .frame(width: 56, height: 24)
+                Spacer()
+                Button("編集…") {
+                    editing = settings.app.configuration.channels.first { $0.id == selection }
+                }
+                .disabled(selection == nil)
+                .controlSize(.small)
+            }
+            .padding(.top, 6)
+            if let error {
+                Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled).padding(.top, 8)
+            }
+            Text("選んだ投稿先は次回も維持します。「普段」のチャンネルには投稿画面から戻れます。")
+                .font(.caption).foregroundStyle(.secondary).padding(.top, 12)
         }
-        .padding(16)
+        .padding(20)
+        .frame(width: 520, height: 420)
+        .sheet(item: $editing) { channel in
+            ChannelEditor(settings: settings, channel: channel) { selection = channel.id }
+        }
+    }
+
+    private func add() {
+        let id = settings.app.configuration.channels.isEmpty ? Configuration.defaultDestinationID : UUID().uuidString
+        editing = PostingChannel(id: id)
+    }
+
+    private func remove(_ id: String) {
+        do {
+            try settings.removeChannel(id)
+            selection = settings.app.configuration.channels.first?.id
+            error = nil
+        } catch { self.error = error.localizedDescription }
     }
 }
 
-private struct ChannelSettingsRow: View {
-    @Binding var channelName: String
-    @Binding var channelID: String
-    let remove: (() -> Void)?
+private struct ChannelRow: View {
+    let channel: PostingChannel
 
     var body: some View {
-        HStack(spacing: 12) {
-            TextField("チャンネル名", text: $channelName)
-                .textFieldStyle(.plain).frame(maxWidth: .infinity)
-            TextField("チャンネルID", text: $channelID)
-                .textFieldStyle(.plain).frame(width: 130)
-            HStack {
-                if let remove {
-                    Button("削除", systemImage: "minus.circle", action: remove)
-                        .labelStyle(.iconOnly).buttonStyle(.borderless)
-                        .accessibilityLabel("\(channelName.isEmpty ? "投稿先" : channelName)を削除")
-                        .help("チャンネルを削除")
-                } else {
-                    Text("普段").font(.caption).foregroundStyle(.secondary)
-                        .help("普段の投稿先")
-                }
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: channel.label)
+                Text(verbatim: channel.channelID).font(.caption).foregroundStyle(.secondary)
             }
-            .frame(width: 42)
+            Spacer()
+            if channel.id == Configuration.defaultDestinationID {
+                Text("普段").font(.caption).foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 4)
+    }
+}
+
+private struct ChannelEditor: View {
+    let settings: SettingsModel
+    let completed: () -> Void
+    @State private var channel: PostingChannel
+    @State private var error: String?
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    init(settings: SettingsModel, channel: PostingChannel, completed: @escaping () -> Void) {
+        self.settings = settings
+        self.completed = completed
+        _channel = State(initialValue: channel)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("チャンネル").font(.headline)
+            Form {
+                TextField("チャンネル名", text: $channel.name).focused($focused)
+                TextField("チャンネルID", text: $channel.channelID)
+            }
+            if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+            HStack {
+                Spacer()
+                Button("キャンセル") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("完了") {
+                    do { try settings.saveChannel(channel); completed(); dismiss() }
+                    catch { self.error = error.localizedDescription }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(channel.channelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24).frame(width: 400)
+        .onAppear { focused = true }
+    }
+}
+
+private struct ChannelListButtons: NSViewRepresentable {
+    let canRemove: Bool
+    let add: () -> Void
+    let remove: () -> Void
+
+    func makeNSView(context: Context) -> ChannelActionsControl {
+        let control = ChannelActionsControl()
+        control.segmentCount = 2
+        control.trackingMode = .momentary
+        control.segmentStyle = .smallSquare
+        control.controlSize = .small
+        control.target = control
+        control.action = #selector(ChannelActionsControl.performAction)
+        for (index, symbol) in ["plus", "minus"].enumerated() {
+            control.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: index == 0 ? "チャンネルを追加" : "選択したチャンネルを削除"), forSegment: index)
+            control.setWidth(28, forSegment: index)
+            control.setToolTip(index == 0 ? "チャンネルを追加" : "選択したチャンネルを削除", forSegment: index)
+        }
+        return control
+    }
+
+    func updateNSView(_ control: ChannelActionsControl, context: Context) {
+        control.add = add
+        control.remove = remove
+        control.setEnabled(canRemove, forSegment: 1)
+    }
+}
+
+private final class ChannelActionsControl: NSSegmentedControl {
+    var add: (() -> Void)?
+    var remove: (() -> Void)?
+
+    @objc func performAction() {
+        if selectedSegment == 0 { add?() }
+        else if selectedSegment == 1 { remove?() }
     }
 }
 
@@ -213,6 +267,11 @@ private final class ShortcutButton: NSButton {
         recording = true
         title = "キーを入力…"
         window?.makeFirstResponder(self)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        if recording { recording = false; title = oldTitle }
+        return super.resignFirstResponder()
     }
 
     override func keyDown(with event: NSEvent) {

@@ -34,7 +34,8 @@ struct Configuration: Codable, Equatable {
     var shortcutLabel = "⇧Space"
 
     var channels: [PostingChannel] {
-        [PostingChannel(id: Self.defaultDestinationID, channelID: channelID, name: channelName)] + additionalChannels
+        let usual = PostingChannel(id: Self.defaultDestinationID, channelID: channelID, name: channelName)
+        return (channelID.isEmpty ? [] : [usual]) + additionalChannels
     }
 
     var selectedChannel: PostingChannel? { channels.first { $0.id == selectedDestinationID } }
@@ -82,6 +83,19 @@ struct Configuration: Codable, Equatable {
     mutating func removeAdditionalChannel(_ id: String) {
         additionalChannels.removeAll { $0.id == id }
         if selectedDestinationID == id { selectedDestinationID = Self.defaultDestinationID }
+    }
+
+    mutating func removeChannel(_ id: String) {
+        guard id == Self.defaultDestinationID else { removeAdditionalChannel(id); return }
+        if additionalChannels.isEmpty {
+            channelID = ""
+            channelName = ""
+        } else {
+            let replacement = additionalChannels.removeFirst()
+            channelID = replacement.channelID
+            channelName = replacement.name
+            if selectedDestinationID == replacement.id { selectedDestinationID = Self.defaultDestinationID }
+        }
     }
 
     static func load(defaults: UserDefaults = .standard) -> Self {

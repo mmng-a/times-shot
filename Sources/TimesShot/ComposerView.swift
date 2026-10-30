@@ -71,7 +71,7 @@ private struct ComposerHeader: View {
             }
             Spacer()
             Button(action: settings) { Image(systemName: "gearshape") }
-                .buttonStyle(.plain).help("設定")
+                .buttonStyle(.borderless).help("設定…")
                 .accessibilityLabel("設定を開く")
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
@@ -87,13 +87,14 @@ private struct ComposerFooter: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: chooseFiles) { Image(systemName: "photo.badge.plus") }
-                .buttonStyle(.plain).help("画像を添付")
+                .buttonStyle(.borderless).help("画像を添付…")
                 .accessibilityLabel("画像を添付")
                 .disabled(importing)
             Text(importing ? "画像を読み込み中…" : "Escで破棄 · ⌘Wで保存")
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
-            Button("送信 ⌘↵", action: send).buttonStyle(.borderedProminent).disabled(!canSend)
+            Button("送信", action: send).keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent).disabled(!canSend)
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
     }
