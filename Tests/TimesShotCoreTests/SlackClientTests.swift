@@ -40,7 +40,7 @@ private final class MockProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
-                                                           httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+                                                           httpVersion: nil, headerFields: ["x-slack-req-id": "times-shot-test-request"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(reply.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -81,7 +81,7 @@ struct SlackClientTests {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data([1, 2, 3]).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
-        let image = ImageAttachment(filename: "photo.png", fileURL: file)
+        let image = ImageAttachment(filename: "画像 + &=?#.png", fileURL: file)
         MockHTTP.shared.reset([
             #"{"ok":true,"upload_url":"https://files.slack.com/upload/one","file_id":"F1"}"#,
             "OK",
@@ -95,9 +95,54 @@ struct SlackClientTests {
         #expect(requests.map { $0.url!.lastPathComponent } == ["files.getUploadURLExternal", "one", "files.getUploadURLExternal", "two", "files.completeUploadExternal"])
         #expect(requests[1].value(forHTTPHeaderField: "Authorization") == nil)
         #expect(requests[3].value(forHTTPHeaderField: "Authorization") == nil)
+        let uploadRequest = requests[0]
+        #expect(uploadRequest.value(forHTTPHeaderField: "Content-Type") == "application/x-www-form-urlencoded; charset=utf-8")
+        let formBody = try #require(uploadRequest.httpBody)
+        var form = URLComponents()
+        form.percentEncodedQuery = String(decoding: formBody, as: UTF8.self)
+        let fields = Dictionary(uniqueKeysWithValues: try #require(form.queryItems).map { ($0.name, $0.value) })
+        #expect(fields["filename"] == image.filename)
+        #expect(fields["length"] == "3")
+        #expect(!String(decoding: formBody, as: UTF8.self).contains("+"))
+        #expect(requests.last?.value(forHTTPHeaderField: "Content-Type") == "application/json; charset=utf-8")
         let body = try #require(requests.last?.httpBody)
         let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
         #expect(payload["initial_comment"] as? String == "*画像の説明*")
+    }
+
+    @Test(arguments: [false, true])
+    func invalidArgumentsAreRejectedWithoutExposingDetailsOrRetrying(atCompletion: Bool) async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data([1]).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let failure = #"{"ok":false,"error":"invalid_arguments","response_metadata":{"messages":["[ERROR] missing required field: length"]}}"#
+        MockHTTP.shared.reset(atCompletion ? [
+            #"{"ok":true,"upload_url":"https://files.slack.com/upload/one","file_id":"F1"}"#,
+            "OK", failure
+        ] : [failure])
+        do {
+            try await client().send(PendingPost(draft: Draft(images: [ImageAttachment(filename: "image.png", fileURL: file)]),
+                                               channelID: "C123", token: "test"))
+            Issue.record("invalid arguments must fail")
+        } catch DeliveryError.rejected(let message) {
+            #expect(message == "Slackへの送信に失敗しました（invalid_arguments）。")
+            #expect(!message.contains("length"))
+        } catch { Issue.record("unexpected error: \(error)") }
+        #expect(MockHTTP.shared.requests.count == (atCompletion ? 3 : 1))
+    }
+
+    @Test func diagnosticsKeepValidationDetailsAndRedactCredentialsAndURLs() {
+        let details = SlackClient.diagnosticDetails([
+            "[ERROR] missing required field: length",
+            "invalid field [json-pointer:/files/0/id]",
+            "token=secret-value xoxp-example-123 https://files.slack.com/upload/signed?secret=value"
+        ], token: "secret-value")
+        #expect(details.contains("missing required field: length"))
+        #expect(details.contains("[json-pointer:/files/0/id]"))
+        #expect(!details.contains("secret-value"))
+        #expect(!details.contains("xoxp-example-123"))
+        #expect(!details.contains("https://"))
+        #expect(SlackClient.diagnosticDetails([], token: "") == "")
     }
 
     @Test func failedUploadDoesNotPublishTextOrRetry() async throws {
