@@ -18,10 +18,11 @@ final class ComposerWindowController: NSWindowController, NSToolbarDelegate {
     init(model: AppModel) {
         self.model = model
         let panel = ComposerPanel(contentRect: NSRect(x: 0, y: 0, width: 540, height: 340),
-                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                                  styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: panel)
         panel.title = "新規投稿"
         panel.toolbarStyle = .unified
+        panel.titlebarAppearsTransparent = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.isReleasedWhenClosed = false
@@ -29,7 +30,14 @@ final class ComposerWindowController: NSWindowController, NSToolbarDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        panel.contentViewController = NSHostingController(rootView: ComposerView(model: model))
+        let hostingController = NSHostingController(rootView: ComposerView(model: model))
+        let glass = NSGlassEffectView()
+        glass.style = .regular
+        glass.contentView = hostingController.view
+        let contentController = NSViewController()
+        contentController.addChild(hostingController)
+        contentController.view = glass
+        panel.contentViewController = contentController
         panel.contentMinSize = NSSize(width: 460, height: 240)
         panel.setContentSize(NSSize(width: 540, height: 340))
 
