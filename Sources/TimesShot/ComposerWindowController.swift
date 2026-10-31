@@ -22,6 +22,8 @@ final class ComposerWindowController: NSWindowController, NSToolbarDelegate {
         super.init(window: panel)
         panel.title = "新規投稿"
         panel.toolbarStyle = .unified
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
         panel.isReleasedWhenClosed = false
         panel.isFloatingPanel = true
         panel.level = .floating

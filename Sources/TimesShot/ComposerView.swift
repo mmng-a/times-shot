@@ -1,3 +1,4 @@
+import AppKit
 import ImageIO
 import SwiftUI
 import TimesShotCore
@@ -16,10 +17,21 @@ struct ComposerView: View {
                 AttachmentStrip(images: model.draft.images, remove: model.removeImage)
             }
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(ComposerBackground())
         .frame(minWidth: 460, minHeight: 240)
         .onChange(of: model.draft) { _, _ in model.changed() }
     }
+}
+
+private struct ComposerBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 private struct AttachmentStrip: View {
