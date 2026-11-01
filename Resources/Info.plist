@@ -14,4 +14,9 @@
     <key>LSUIElement</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>SlackClientID</key><string>6315494071649.12431748371926</string>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>jp.sendocorp.TimesShot.oauth</string>
+        <key>CFBundleURLSchemes</key><array><string>timesshot</string></array>
+    </dict></array>
 </dict></plist>

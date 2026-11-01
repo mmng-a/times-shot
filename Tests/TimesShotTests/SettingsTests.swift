@@ -17,10 +17,12 @@ import TimesShotCore
             configuration.channelName = "times"
             configuration.workspace = "Workspace"
             configuration.username = "user"
+            configuration.teamID = "T1"
+            configuration.userID = "U1"
         }
         try configuration.save(defaults: defaults)
         app = AppModel(storage: try DraftStorage(directory: directory), defaults: defaults,
-                       readToken: { connected ? "xoxp-original" : "" })
+                       connection: try testConnection(connected: connected))
     }
 
     func cleanup() {
@@ -29,38 +31,11 @@ import TimesShotCore
     }
 }
 
-private func identity(team: String = "Workspace") throws -> SlackIdentity {
-    try JSONDecoder().decode(SlackIdentity.self, from: JSONSerialization.data(withJSONObject: [
-        "team": team, "user": "updated-user", "user_id": "U00000001"
-    ]))
-}
-
-@MainActor @Test func addingAChannelCreatesAnInlineDraftWithoutRegisteringAnEmptyDestination() throws {
-    let fixture = try SettingsFixture()
-    defer { fixture.cleanup() }
-    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
-    let id = settings.startAddingChannel()
-    #expect(settings.channels.count == 1)
-    #expect(settings.startAddingChannel() == id)
-    #expect(fixture.app.configuration.channels.isEmpty)
-    settings.channelEdits[id] = PostingChannel(id: id, name: "times")
-    try settings.commitChannel(id)
-    #expect(fixture.app.configuration.channels.isEmpty)
-    settings.channelEdits[id]?.channelID = "C00000001"
-    try settings.commitChannel(id)
-    #expect(settings.newChannel == nil)
-    #expect(Configuration.load(defaults: fixture.app.defaults).channels.first?.label == "#times")
-    let next = settings.startAddingChannel()
-    try settings.removeChannel(next)
-    #expect(settings.channels.count == 1)
-    #expect(fixture.app.configuration.channels.count == 1)
-}
-
 @MainActor @Test func composerToolbarUsesNativeControlsAndTracksPostingState() async throws {
     _ = NSApplication.shared
     let fixture = try SettingsFixture(connected: true)
     defer { fixture.cleanup() }
-    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in }, client: testSlackClient())
     let extra = PostingChannel(channelID: "C00000002", name: "project")
     try settings.saveChannel(extra)
     let controller = ComposerWindowController(model: fixture.app)
@@ -87,7 +62,7 @@ private func identity(team: String = "Workspace") throws -> SlackIdentity {
 @MainActor @Test func settingsPaneTitlesAreLocalizedInJapaneseAndEnglish() throws {
     let fixture = try SettingsFixture()
     defer { fixture.cleanup() }
-    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in }, client: testSlackClient())
     let japanese = SettingsViewController(settings: settings, locale: Locale(identifier: "ja"))
     let english = SettingsViewController(settings: settings, locale: Locale(identifier: "en"))
     #expect(japanese.tabViewItems.map(\.label) == ["一般", "チャンネル"])
@@ -97,7 +72,7 @@ private func identity(team: String = "Workspace") throws -> SlackIdentity {
 @MainActor @Test func channelChangesSaveWithoutAConnectionAndProtectDrafts() throws {
     let fixture = try SettingsFixture()
     defer { fixture.cleanup() }
-    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in }, client: testSlackClient())
     #expect(fixture.app.configuration.channels.isEmpty)
     try settings.saveChannel(PostingChannel(id: Configuration.defaultDestinationID, channelID: "C00000001", name: "times"))
     let extra = PostingChannel(channelID: "C00000002", name: "project")
@@ -118,49 +93,39 @@ private func identity(team: String = "Workspace") throws -> SlackIdentity {
     #expect(Configuration.load(defaults: fixture.app.defaults).channels.isEmpty)
 }
 
-@MainActor @Test func tokenEditsAutomaticallyVerifyAndSaveOnlyValidCredentials() async throws {
-    let fixture = try SettingsFixture(connected: true)
-    defer { fixture.cleanup() }
-    var saved: [String] = []
-    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in },
-                                 authenticate: { _ in try identity() }, writeToken: { saved.append($0) })
-    settings.tokenInput = "xoxp-updated"
-    await settings.tokenTask?.value
-    #expect(saved == ["xoxp-updated"])
-    #expect(fixture.app.token == "xoxp-updated")
-    #expect(Configuration.load(defaults: fixture.app.defaults).username == "updated-user")
-    settings.tokenInput = "invalid"
-    await settings.tokenTask?.value
-    #expect(settings.connectionError != nil)
-    #expect(saved.count == 1)
-    #expect(fixture.app.token == "xoxp-updated")
-    settings.tokenInput = ""
-    await settings.tokenTask?.value
-    #expect(fixture.app.token.isEmpty)
-    #expect(!fixture.app.isReady)
-    #expect(saved == ["xoxp-updated", ""])
-}
-
-@MainActor @Test func changingWorkspacesWithADraftDoesNotReplaceCredentials() async throws {
+@MainActor @Test func reconnectingAnotherAccountDoesNotMoveDraftsOrReplaceCredentials() throws {
     let fixture = try SettingsFixture(connected: true)
     defer { fixture.cleanup() }
     fixture.app.draft = Draft(text: "編集中")
-    var saved: [String] = []
-    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in },
-                                 authenticate: { _ in try identity(team: "Other") }, writeToken: { saved.append($0) })
-    settings.tokenInput = "xoxp-other"
-    await settings.tokenTask?.value
-    #expect(settings.connectionError != nil)
-    #expect(saved.isEmpty)
-    #expect(fixture.app.token == "xoxp-original")
-    #expect(fixture.app.configuration.workspace == "Workspace")
+    let original = fixture.app.connection.credentials
+    #expect(throws: StorageError.self) { try fixture.app.connect(testCredentials(teamID: "T2")) }
+    #expect(throws: StorageError.self) { try fixture.app.connect(testCredentials(userID: "U2")) }
+    #expect(fixture.app.connection.credentials == original)
+    #expect(fixture.app.configuration.selectedChannel?.channelID == "C00000001")
+    try fixture.app.connect(testCredentials())
+    #expect(fixture.app.connection.credentials?.connectionID == original?.connectionID)
+    #expect(fixture.app.draft.text == "編集中")
 }
 
-@MainActor @Test func settingsUseLocalizedToolbarAndAddChannelsWithoutASheet() async throws {
+@MainActor @Test func disconnectRemovesCredentialsAndPreventsSendingWithoutDiscardingDrafts() throws {
+    let fixture = try SettingsFixture(connected: true)
+    defer { fixture.cleanup() }
+    fixture.app.draft = Draft(text: "編集中")
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in }, client: testSlackClient())
+    settings.disconnect()
+    #expect(fixture.app.connection.credentials == nil)
+    #expect(!fixture.app.canSend)
+    #expect(fixture.app.draft.text == "編集中")
+    try fixture.app.connect(testCredentials())
+    #expect(fixture.app.canSend)
+    #expect(fixture.app.configuration.selectedChannel?.channelID == "C00000001")
+}
+
+@MainActor @Test func settingsUseLocalizedToolbarAndChooseChannelsWithoutIDFields() async throws {
     _ = NSApplication.shared
     let fixture = try SettingsFixture(connected: true)
     defer { fixture.cleanup() }
-    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in })
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in }, client: testSlackClient())
     try settings.saveChannel(PostingChannel(channelID: "C00000002", name: "project"))
     let controller = SettingsViewController(settings: settings, locale: Locale(identifier: "ja"))
     let window = controller.makeWindow()
@@ -173,27 +138,8 @@ private func identity(team: String = "Workspace") throws -> SlackIdentity {
 
     controller.selectedTabViewItemIndex = 1
     try await Task.sleep(for: .milliseconds(100))
-    func findAddControl(in view: NSView) -> NSSegmentedControl? {
-        if let control = view as? NSSegmentedControl,
-           control.segmentCount == 2, control.toolTip(forSegment: 0) == "チャンネルを追加" { return control }
-        for child in view.subviews {
-            if let control = findAddControl(in: child) { return control }
-        }
-        return nil
-    }
-    let content = try #require(window.contentView)
-    let addControl = try #require(findAddControl(in: content))
-    #expect(addControl.trackingMode == .momentary)
-    addControl.trackingMode = .selectOne
-    addControl.selectedSegment = 0
-    #expect(addControl.sendAction(addControl.action, to: addControl.target))
-    addControl.selectedSegment = -1
-    addControl.trackingMode = .momentary
-    await Task.yield()
-    #expect(settings.newChannel != nil)
-    #expect(settings.channels.count == 3)
-    #expect(fixture.app.configuration.channels.count == 2)
     #expect(window.attachedSheet == nil)
+    #expect(fixture.app.configuration.channels.count == 2)
 
     if let path = ProcessInfo.processInfo.environment["TIMES_SHOT_UI_PREVIEW_DIR"] {
         let directory = URL(filePath: path, directoryHint: .isDirectory)

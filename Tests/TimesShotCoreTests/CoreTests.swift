@@ -49,7 +49,7 @@ private actor SenderProbe {
             if results.count == 3 { done.resume() }
         })
         for text in ["最初", "失敗", "最後"] {
-            queue.enqueue(PendingPost(draft: Draft(text: text), channelID: "C123", token: "test"))
+            queue.enqueue(PendingPost(draft: Draft(text: text), channelID: "C123", connectionID: UUID()))
         }
         #expect(queue.count == 3)
     }
@@ -68,8 +68,8 @@ private actor SenderProbe {
             started.resume()
             try await Task.sleep(for: .seconds(60))
         }, completed: { _, _ in finished = true })
-        queue.enqueue(PendingPost(draft: Draft(text: "最初"), channelID: "C1", token: "test"))
-        queue.enqueue(PendingPost(draft: Draft(text: "次"), channelID: "C1", token: "test"))
+        queue.enqueue(PendingPost(draft: Draft(text: "最初"), channelID: "C1", connectionID: UUID()))
+        queue.enqueue(PendingPost(draft: Draft(text: "次"), channelID: "C1", connectionID: UUID()))
     }
     queue.discardAll()
     #expect(queue.count == 0)

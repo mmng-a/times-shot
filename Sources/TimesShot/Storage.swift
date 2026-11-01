@@ -29,6 +29,8 @@ struct Configuration: Codable, Equatable {
     var selectedDestinationID = defaultDestinationID
     var workspace = ""
     var username = ""
+    var teamID = ""
+    var userID = ""
     var keyCode = UInt32(kVK_Space)
     var modifiers = UInt32(shiftKey)
     var shortcutLabel = "⇧Space"
@@ -46,7 +48,7 @@ struct Configuration: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case channelID, channelName, additionalChannels, selectedDestinationID
-        case workspace, username, keyCode, modifiers, shortcutLabel
+        case workspace, username, teamID, userID, keyCode, modifiers, shortcutLabel
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +59,8 @@ struct Configuration: Codable, Equatable {
         selectedDestinationID = try values.decodeIfPresent(String.self, forKey: .selectedDestinationID) ?? Self.defaultDestinationID
         workspace = try values.decode(String.self, forKey: .workspace)
         username = try values.decode(String.self, forKey: .username)
+        teamID = try values.decodeIfPresent(String.self, forKey: .teamID) ?? ""
+        userID = try values.decodeIfPresent(String.self, forKey: .userID) ?? ""
         keyCode = try values.decode(UInt32.self, forKey: .keyCode)
         modifiers = try values.decode(UInt32.self, forKey: .modifiers)
         shortcutLabel = try values.decode(String.self, forKey: .shortcutLabel)
@@ -72,7 +76,7 @@ struct Configuration: Codable, Equatable {
             return channel
         }
         guard channels.allSatisfy({ $0.channelID.range(of: "^[CG][A-Z0-9]+$", options: .regularExpression) != nil }) else {
-            throw StorageError.message("すべての投稿先にチャンネルID（C…またはG…）を入力してください。")
+            throw StorageError.message("投稿先のチャンネルを選び直してください。")
         }
         guard Set(channels.map(\.channelID)).count == channels.count else {
             throw StorageError.message("同じチャンネルが重複しています。")
@@ -113,25 +117,31 @@ struct Configuration: Codable, Equatable {
     private static let query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: "jp.sendocorp.TimesShot",
-        kSecAttrAccount as String: "slack-user-token"
+        kSecAttrAccount as String: "slack-oauth-credentials"
     ]
 
-    static func read() throws -> String {
+    static func read() throws -> SlackCredentials? {
         var request = query
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
         let status = SecItemCopyMatching(request as CFDictionary, &item)
-        if status == errSecItemNotFound { return "" }
-        guard status == errSecSuccess, let data = item as? Data,
-              let token = String(data: data, encoding: .utf8) else {
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data else {
             throw StorageError.message("KeychainからSlackの認証情報を読み出せませんでした。")
         }
-        return token
+        return try JSONDecoder().decode(SlackCredentials.self, from: data)
     }
 
-    static func save(_ token: String) throws {
-        let data = Data(token.utf8)
+    static func save(_ credentials: SlackCredentials?) throws {
+        guard let credentials else {
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw StorageError.message("Slackの認証情報を削除できませんでした。")
+            }
+            return
+        }
+        let data = try JSONEncoder().encode(credentials)
         let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecSuccess { return }
         guard status == errSecItemNotFound else {

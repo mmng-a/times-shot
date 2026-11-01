@@ -17,21 +17,26 @@ final class AppModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var importTask: Task<Void, Never>?
     @ObservationIgnored private var lastStorageError: String?
-    var token = ""
+    let connection: SlackConnection
 
     init(storage: DraftStorage, defaults: UserDefaults = .standard,
-         readToken: @MainActor () throws -> String = TokenStore.read) {
+         connection: SlackConnection) {
         self.storage = storage
         self.defaults = defaults
+        self.connection = connection
         configuration = Configuration.load(defaults: defaults)
         do {
             draft = try storage.load()
             try storage.removeOrphans(keeping: draft.images)
         } catch { latestError = error.localizedDescription }
-        do { token = try readToken() } catch { latestError = error.localizedDescription }
         let client = SlackClient()
         queue = PostingQueue(send: { post in
-            try await client.send(post)
+            do {
+                try await client.send(post, accessToken: { try await connection.accessToken(for: post.connectionID) })
+            } catch {
+                if case SlackAuthorizationError.reconnect = error { await connection.markForReconnect(connectionID: post.connectionID) }
+                throw error
+            }
             // Slack's per-channel posting limit is one message per second; this is spacing, not a retry.
             try await Task.sleep(for: .seconds(1))
         }, completed: { [weak self] post, error in
@@ -42,7 +47,10 @@ final class AppModel {
         })
     }
 
-    var isReady: Bool { configuration.isConfigured && token.hasPrefix("xoxp-") }
+    var isReady: Bool {
+        configuration.isConfigured && connection.credentials != nil && !connection.requiresReconnect
+            && configuration.teamID == connection.credentials?.teamID && configuration.userID == connection.credentials?.userID
+    }
     var canSend: Bool { !draft.isEmpty && !importing && isReady }
 
     func changed() {
@@ -97,17 +105,52 @@ final class AppModel {
 
     func validateConfigurationChange(_ proposed: Configuration) throws {
         guard draft.isEmpty || (proposed.selectedChannel?.channelID == configuration.selectedChannel?.channelID
-                               && proposed.workspace == configuration.workspace) else {
+                               && proposed.teamID == configuration.teamID && proposed.userID == configuration.userID) else {
             throw StorageError.message("下書きがあります。送信するか破棄してから、選択中の投稿先やワークスペースを変更してください。")
         }
     }
 
+    func connect(_ credentials: SlackCredentials) throws {
+        guard queue.count == 0, !importing else {
+            throw StorageError.message("送信と画像の読み込みが完了してから、Slackに接続してください。")
+        }
+        var proposed = configuration
+        let sameAccount = configuration.teamID == credentials.teamID && configuration.userID == credentials.userID
+        guard sameAccount || draft.isEmpty else {
+            throw StorageError.message("下書きがあります。送信するか破棄してから、Slackの接続先を変更してください。")
+        }
+        if !sameAccount {
+            proposed.channelID = ""
+            proposed.channelName = ""
+            proposed.additionalChannels = []
+            proposed.selectedDestinationID = Configuration.defaultDestinationID
+        }
+        proposed.teamID = credentials.teamID
+        proposed.userID = credentials.userID
+        proposed.workspace = credentials.workspace
+        proposed.username = credentials.username
+        var credentials = credentials
+        if let previous = connection.credentials, previous.teamID == credentials.teamID, previous.userID == credentials.userID {
+            credentials.connectionID = previous.connectionID
+        }
+        try connection.replace(credentials)
+        try updateConfiguration(proposed)
+    }
+
+    func disconnect() throws {
+        guard queue.count == 0, !importing else {
+            throw StorageError.message("送信と画像の読み込みが完了してから、Slackとの接続を解除してください。")
+        }
+        try connection.disconnect()
+        onStatusChange?()
+    }
+
     func send() {
-        guard canSend, let channel = configuration.selectedChannel else { return }
+        guard canSend, let channel = configuration.selectedChannel, let credentials = connection.credentials else { return }
         let submitted = draft
         draft = Draft()
         guard saveDraft() else { draft = submitted; return }
-        queue.enqueue(PendingPost(draft: submitted, channelID: channel.channelID, token: token))
+        queue.enqueue(PendingPost(draft: submitted, channelID: channel.channelID, connectionID: credentials.connectionID))
         onStatusChange?()
         onAccepted?()
     }

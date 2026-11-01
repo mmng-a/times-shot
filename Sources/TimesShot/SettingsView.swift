@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TimesShotCore
 
 @MainActor
 final class SettingsViewController: NSTabViewController {
@@ -7,10 +8,10 @@ final class SettingsViewController: NSTabViewController {
         super.init(nibName: nil, bundle: nil)
         tabStyle = .toolbar
         preferredContentSize = NSSize(width: 520, height: 420)
-        let general = NSHostingController(rootView: GeneralSettings(settings: settings))
+        let general = NSHostingController(rootView: GeneralSettings(settings: settings).environment(\.locale, locale))
         general.title = String(localized: LocalizedStringResource("General", locale: locale, bundle: .atURL(Bundle.module.bundleURL)))
         general.preferredContentSize = preferredContentSize
-        let channels = NSHostingController(rootView: ChannelSettings(settings: settings))
+        let channels = NSHostingController(rootView: ChannelSettings(settings: settings).environment(\.locale, locale))
         channels.title = String(localized: LocalizedStringResource("Channels", locale: locale, bundle: .atURL(Bundle.module.bundleURL)))
         channels.preferredContentSize = preferredContentSize
         for (controller, symbol) in [(general as NSViewController, "gearshape"), (channels, "number")] {
@@ -40,22 +41,7 @@ private struct GeneralSettings: View {
     var body: some View {
         Form {
             Section("Slack") {
-                SecureField("User OAuth Token", text: $settings.tokenInput)
-                if settings.checkingConnection {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("接続を確認中…").foregroundStyle(.secondary)
-                    }
-                } else if let error = settings.connectionError {
-                    Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
-                } else if !settings.app.token.isEmpty {
-                    LabeledContent("アカウント") {
-                        Text(verbatim: settings.app.configuration.username + " / " + settings.app.configuration.workspace)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text("User Token Scopesにchat:writeとfiles:writeが必要です。認証情報はKeychainに保存します。")
-                    .font(.caption).foregroundStyle(.secondary)
+                SlackConnectionSettings(settings: settings)
             }
             Section("操作") {
                 LabeledContent("呼び出す／隠す") {
@@ -78,76 +64,87 @@ private struct GeneralSettings: View {
     }
 }
 
-private enum ChannelField: Hashable {
-    case name(String)
-    case channelID(String)
+private struct SlackConnectionSettings: View {
+    let settings: SettingsModel
 
-    var channel: String {
-        switch self {
-        case .name(let id), .channelID(let id): id
+    var body: some View {
+        if let credentials = settings.app.connection.credentials {
+            LabeledContent("アカウント") {
+                Text(verbatim: credentials.username + " / " + credentials.workspace)
+                    .foregroundStyle(.secondary)
+            }
         }
+        HStack {
+            Button {
+                Task { await settings.connect(window: NSApp.keyWindow) }
+            } label: {
+                if settings.app.connection.credentials == nil {
+                    Text("Slackに接続", bundle: .module)
+                } else {
+                    Text("Slackに再接続", bundle: .module)
+                }
+            }
+            .disabled(settings.checkingConnection || settings.app.connection.clientID.isEmpty)
+            if settings.app.connection.credentials != nil {
+                Button { settings.disconnect() } label: { Text("接続解除", bundle: .module) }
+                    .disabled(settings.checkingConnection)
+            }
+            if settings.checkingConnection { ProgressView().controlSize(.small) }
+        }
+        if settings.app.connection.clientID.isEmpty {
+            Text("このバージョンはSlackへの接続設定が完了していません。", bundle: .module)
+                .font(.caption).foregroundStyle(.secondary)
+        } else if settings.app.connection.requiresReconnect {
+            Text("Slackに再接続してください。", bundle: .module)
+                .font(.callout).foregroundStyle(.red)
+        }
+        if let error = settings.connectionError {
+            Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+        }
+        Text("認証情報はこのMacのKeychainに保存します。接続解除はこのMacに保存した認証情報を削除します。", bundle: .module)
+            .font(.caption).foregroundStyle(.secondary)
     }
 }
 
 private struct ChannelSettings: View {
-    let settings: SettingsModel
+    @Bindable var settings: SettingsModel
     @State private var selection: String?
     @State private var error: String?
-    @FocusState private var focusedField: ChannelField?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Text("チャンネル名（表示用）").frame(maxWidth: .infinity, alignment: .leading)
-                Text("チャンネルID").frame(width: 130, alignment: .leading)
-            }
-            .font(.caption).foregroundStyle(.secondary)
-            .padding(.horizontal, 12).padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("登録した投稿先", bundle: .module).font(.headline)
             List(selection: $selection) {
-                ForEach(settings.channels) { channel in
-                    ChannelRow(channel: Binding(get: { settings.channelEdits[channel.id] ?? channel }, set: { settings.channelEdits[channel.id] = $0 }),
-                               focusedField: $focusedField, commit: { commit(channel.id) })
-                        .tag(channel.id)
+                ForEach(settings.app.configuration.channels) { channel in
+                    Text(verbatim: channel.label).tag(channel.id)
                         .contextMenu { Button("削除") { remove(channel.id) } }
                 }
             }
-            .listStyle(.bordered)
+            .listStyle(.bordered).frame(height: 100)
             .accessibilityLabel("投稿先チャンネル")
             .onDeleteCommand { if let selection { remove(selection) } }
-            HStack(spacing: 0) {
-                ChannelListButtons(canRemove: selection != nil, add: add, remove: {
-                    if let selection { remove(selection) }
-                })
-                .frame(width: 56, height: 24)
+            HStack {
+                Button { if let selection { remove(selection) } } label: {
+                    Image(systemName: "minus")
+                }
+                .help("選択したチャンネルを削除").disabled(selection == nil)
                 Spacer()
+                Button { Task { await settings.reloadChannels() } } label: {
+                    Label { Text("一覧を再取得", bundle: .module) } icon: { Image(systemName: "arrow.clockwise") }
+                }
+                .disabled(settings.loadingChannels || settings.app.connection.credentials == nil || settings.checkingConnection)
             }
-            .padding(.top, 6)
-            if let error {
-                Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled).padding(.top, 8)
+            Divider()
+            TextField(text: $settings.channelSearch) { Text("追加するチャンネルを検索", bundle: .module) }
+                .textFieldStyle(.roundedBorder)
+            AvailableChannels(settings: settings)
+            if let error = error ?? settings.channelError {
+                Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
-            Text("投稿画面で選んだチャンネルは、次回も維持します。")
-                .font(.caption).foregroundStyle(.secondary).padding(.top, 12)
         }
         .padding(20)
         .frame(width: 520, height: 420)
-        .onChange(of: focusedField) { previous, current in
-            if let previous, previous.channel != current?.channel { commit(previous.channel) }
-            if let current { selection = current.channel }
-        }
-        .onDisappear { for id in Array(settings.channelEdits.keys) { commit(id) } }
-    }
-
-    private func commit(_ id: String) {
-        do {
-            try settings.commitChannel(id)
-            error = nil
-        } catch { self.error = error.localizedDescription }
-    }
-
-    private func add() {
-        let id = settings.startAddingChannel()
-        selection = id
-        focusedField = .name(id)
+        .task(id: settings.app.connection.credentials?.connectionID) { await settings.reloadChannels() }
     }
 
     private func remove(_ id: String) {
@@ -155,66 +152,39 @@ private struct ChannelSettings: View {
             try settings.removeChannel(id)
             selection = settings.app.configuration.channels.first?.id
             error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
+        } catch { self.error = error.localizedDescription }
     }
 }
 
-private struct ChannelRow: View {
-    @Binding var channel: PostingChannel
-    let focusedField: FocusState<ChannelField?>.Binding
-    let commit: () -> Void
+private struct AvailableChannels: View {
+    let settings: SettingsModel
 
     var body: some View {
-        HStack(spacing: 12) {
-            TextField("チャンネル名", text: $channel.name)
-                .textFieldStyle(.plain).frame(maxWidth: .infinity)
-                .focused(focusedField, equals: .name(channel.id))
-            TextField("チャンネルID", text: $channel.channelID)
-                .textFieldStyle(.plain).frame(width: 130)
-                .focused(focusedField, equals: .channelID(channel.id))
+        List(settings.filteredChannels) { channel in
+            let registered = settings.app.configuration.channels.contains { $0.channelID == channel.id }
+            Button { settings.addChannel(channel) } label: {
+                HStack {
+                    Label(channel.name, systemImage: channel.is_private ? "lock" : "number")
+                    Spacer()
+                    Image(systemName: registered ? "checkmark" : "plus")
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(registered || settings.loadingChannels || settings.app.connection.requiresReconnect)
+            .accessibilityLabel(channel.name)
+            .accessibilityHint(registered ? "登録済み" : "投稿先に追加")
         }
-        .padding(.vertical, 5)
-        .onSubmit(commit)
-    }
-}
-
-private struct ChannelListButtons: NSViewRepresentable {
-    let canRemove: Bool
-    let add: () -> Void
-    let remove: () -> Void
-
-    func makeNSView(context: Context) -> ChannelActionsControl {
-        let control = ChannelActionsControl()
-        control.segmentCount = 2
-        control.trackingMode = .momentary
-        control.segmentStyle = .smallSquare
-        control.controlSize = .small
-        control.target = control
-        control.action = #selector(ChannelActionsControl.performAction)
-        for (index, symbol) in ["plus", "minus"].enumerated() {
-            control.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: index == 0 ? "チャンネルを追加" : "選択したチャンネルを削除"), forSegment: index)
-            control.setWidth(28, forSegment: index)
-            control.setToolTip(index == 0 ? "チャンネルを追加" : "選択したチャンネルを削除", forSegment: index)
+        .listStyle(.bordered)
+        .overlay {
+            if settings.loadingChannels {
+                ProgressView()
+            } else if settings.app.connection.credentials == nil {
+                Text("一般設定からSlackに接続してください。", bundle: .module).foregroundStyle(.secondary)
+            } else if settings.filteredChannels.isEmpty, settings.channelError == nil {
+                Text("該当するチャンネルがありません。", bundle: .module).foregroundStyle(.secondary)
+            }
         }
-        return control
-    }
-
-    func updateNSView(_ control: ChannelActionsControl, context: Context) {
-        control.add = add
-        control.remove = remove
-        control.setEnabled(canRemove, forSegment: 1)
-    }
-}
-
-private final class ChannelActionsControl: NSSegmentedControl {
-    var add: (() -> Void)?
-    var remove: (() -> Void)?
-
-    @objc func performAction() {
-        if selectedSegment == 0 { add?() }
-        else if selectedSegment == 1 { remove?() }
     }
 }
 

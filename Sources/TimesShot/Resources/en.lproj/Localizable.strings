@@ -1,2 +1,13 @@
 "General" = "General";
 "Channels" = "Channels";
+"Slackに接続" = "Connect to Slack";
+"Slackに再接続" = "Reconnect to Slack";
+"接続解除" = "Disconnect";
+"このバージョンはSlackへの接続設定が完了していません。" = "Slack connection is not configured in this version.";
+"Slackに再接続してください。" = "Reconnect to Slack to continue.";
+"認証情報はこのMacのKeychainに保存します。接続解除はこのMacに保存した認証情報を削除します。" = "Credentials are stored in Keychain on this Mac. Disconnecting removes the credentials saved on this Mac.";
+"登録した投稿先" = "Saved destinations";
+"一覧を再取得" = "Refresh channels";
+"追加するチャンネルを検索" = "Search channels to add";
+"一般設定からSlackに接続してください。" = "Connect to Slack in General settings.";
+"該当するチャンネルがありません。" = "No matching channels.";

@@ -39,13 +39,13 @@ public struct PendingPost: Identifiable, Sendable {
     public let id: UUID
     public let draft: Draft
     public let channelID: String
-    public let token: String
+    public let connectionID: UUID
 
-    public init(draft: Draft, channelID: String, token: String) {
+    public init(draft: Draft, channelID: String, connectionID: UUID) {
         self.id = UUID()
         self.draft = draft
         self.channelID = channelID
-        self.token = token
+        self.connectionID = connectionID
     }
 }
 

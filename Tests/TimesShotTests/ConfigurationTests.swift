@@ -54,10 +54,13 @@ func invalidOrDuplicateChannelSettingsAreRejected(channelID: String) {
     configuration.channelID = "C00000001"
     configuration.channelName = "times"
     configuration.workspace = "Workspace"
+    configuration.teamID = "T1"
+    configuration.userID = "U1"
     let extra = PostingChannel(channelID: "C00000002", name: "project")
     configuration.additionalChannels = [extra]
     try configuration.save(defaults: defaults)
-    let model = AppModel(storage: storage, defaults: defaults, readToken: { "xoxp-test" })
+    let model = AppModel(storage: storage, defaults: defaults, connection: try testConnection())
+    let restartConnection = try testConnection()
     var delivered: [PendingPost] = []
     await withCheckedContinuation { done in
         model.queue = PostingQueue(send: { _ in }, completed: { post, _ in
@@ -73,7 +76,7 @@ func invalidOrDuplicateChannelSettingsAreRejected(channelID: String) {
         model.draft = Draft(text: "次の投稿")
         model.send()
         #expect(model.configuration.selectedDestinationID == extra.id)
-        let restarted = AppModel(storage: storage, defaults: defaults, readToken: { "xoxp-test" })
+        let restarted = AppModel(storage: storage, defaults: defaults, connection: restartConnection)
         #expect(restarted.configuration.selectedDestinationID == extra.id)
         model.selectChannel(Configuration.defaultDestinationID)
         model.draft = Draft(text: "timesの投稿")

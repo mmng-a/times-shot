@@ -1,4 +1,5 @@
 import AppKit
+import AuthenticationServices
 import Observation
 import ServiceManagement
 import TimesShotCore
@@ -6,63 +7,116 @@ import TimesShotCore
 @MainActor @Observable
 final class SettingsModel {
     let app: AppModel
-    var tokenInput: String { didSet { scheduleTokenUpdate() } }
     var checkingConnection = false
     var connectionError: String?
     var generalError: String?
-    var newChannel: PostingChannel?
-    var channelEdits: [String: PostingChannel] = [:]
+    var loadingChannels = false
+    var channelError: String?
+    var channelSearch = "" { didSet { filterChannels() } }
+    private(set) var availableChannels: [SlackChannel] = []
+    private(set) var filteredChannels: [SlackChannel] = []
     var launchAtLogin = [.enabled, .requiresApproval].contains(SMAppService.mainApp.status)
-    @ObservationIgnored private(set) var tokenTask: Task<Void, Never>?
-    @ObservationIgnored private let authenticate: @Sendable (String) async throws -> SlackIdentity
-    @ObservationIgnored private let writeToken: @MainActor (String) throws -> Void
+    @ObservationIgnored private let client: SlackClient
+    @ObservationIgnored private let webAuthentication = SlackWebAuthentication()
     @ObservationIgnored private let applyShortcut: (Configuration) throws -> Void
+    @ObservationIgnored private var loadedConnectionID: UUID?
+    @ObservationIgnored private var channelRequestID: UUID?
 
     init(app: AppModel, applyShortcut: @escaping (Configuration) throws -> Void,
-         authenticate: @escaping @Sendable (String) async throws -> SlackIdentity = { try await SlackClient().identity(token: $0) },
-         writeToken: @escaping @MainActor (String) throws -> Void = TokenStore.save) {
+         client: SlackClient = SlackClient()) {
         self.app = app
         self.applyShortcut = applyShortcut
-        self.authenticate = authenticate
-        self.writeToken = writeToken
-        tokenInput = app.token
+        self.client = client
     }
 
-    private func scheduleTokenUpdate() {
-        tokenTask?.cancel()
+    func connect(window: NSWindow?) async {
+        guard !checkingConnection else { return }
+        guard let window, !app.connection.clientID.isEmpty else {
+            connectionError = "このバージョンはSlackへの接続を開始できません。"
+            return
+        }
+        guard app.queue.count == 0, !app.importing else {
+            connectionError = "送信と画像の読み込みが完了してから、Slackに接続してください。"
+            return
+        }
+        checkingConnection = true
         connectionError = nil
-        checkingConnection = false
-        let candidate = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard candidate != app.token else { return }
-        tokenTask = Task {
-            do {
-                try await Task.sleep(for: .milliseconds(500))
-                guard candidate.isEmpty || candidate.hasPrefix("xoxp-") else {
-                    throw StorageError.message("User OAuth Token（xoxp-…）を入力してください。")
-                }
-                checkingConnection = true
-                var proposed = app.configuration
-                if !candidate.isEmpty {
-                    let identity = try await authenticate(candidate)
-                    try Task.checkCancellation()
-                    proposed = app.configuration
-                    proposed.workspace = identity.team
-                    proposed.username = identity.user
-                }
-                try Task.checkCancellation()
-                try app.validateConfigurationChange(proposed)
-                let previous = app.token
-                try writeToken(candidate)
-                do { try app.updateConfiguration(proposed) }
-                catch { try? writeToken(previous); throw error }
-                app.token = candidate
-                checkingConnection = false
-            } catch {
-                guard !Task.isCancelled else { return }
-                checkingConnection = false
+        defer { checkingConnection = false }
+        do {
+            let authorization = try SlackAuthorization()
+            let callback = try await webAuthentication.authenticate(url: authorization.url(clientID: app.connection.clientID), window: window)
+            let code = try authorization.code(from: callback)
+            let credentials = try await client.authorize(code: code, verifier: authorization.verifier, clientID: app.connection.clientID)
+            try app.connect(credentials)
+            await reloadChannels()
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain != ASWebAuthenticationSessionErrorDomain || nsError.code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
                 connectionError = error.localizedDescription
             }
         }
+    }
+
+    func disconnect() {
+        do {
+            try app.disconnect()
+            availableChannels = []
+            loadedConnectionID = nil
+            channelRequestID = nil
+            loadingChannels = false
+            filterChannels()
+            connectionError = nil
+            channelError = nil
+        } catch { connectionError = error.localizedDescription }
+    }
+
+    func reloadChannels() async {
+        guard let connectionID = app.connection.credentials?.connectionID else {
+            availableChannels = []
+            loadedConnectionID = nil
+            channelRequestID = nil
+            loadingChannels = false
+            filterChannels()
+            return
+        }
+        let requestID = UUID()
+        channelRequestID = requestID
+        loadingChannels = true
+        channelError = nil
+        availableChannels = []
+        loadedConnectionID = nil
+        filterChannels()
+        defer { if channelRequestID == requestID { loadingChannels = false } }
+        do {
+            let token = try await app.connection.accessToken(for: connectionID)
+            let channels = try await client.channels(token: token)
+            try Task.checkCancellation()
+            guard app.connection.credentials?.connectionID == connectionID, channelRequestID == requestID else { return }
+            availableChannels = channels
+            loadedConnectionID = connectionID
+            filterChannels()
+        } catch {
+            guard app.connection.credentials?.connectionID == connectionID, channelRequestID == requestID, !Task.isCancelled else { return }
+            if case SlackAuthorizationError.reconnect = error { app.connection.markForReconnect(connectionID: connectionID) }
+            channelError = error.localizedDescription
+        }
+    }
+
+    private func filterChannels() {
+        let search = channelSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        filteredChannels = availableChannels.filter { search.isEmpty || $0.name.localizedStandardContains(search) }
+    }
+
+    func addChannel(_ channel: SlackChannel) {
+        do {
+            guard loadedConnectionID == app.connection.credentials?.connectionID, loadedConnectionID != nil,
+                  availableChannels.contains(channel), !app.connection.requiresReconnect else {
+                throw StorageError.message("チャンネル一覧を再取得してください。")
+            }
+            let id = app.configuration.channels.isEmpty ? Configuration.defaultDestinationID : UUID().uuidString
+            try saveChannel(PostingChannel(id: id, channelID: channel.id, name: channel.name))
+            channelError = nil
+        } catch { channelError = error.localizedDescription }
     }
 
     func setShortcut(_ shortcut: RecordedShortcut) {
@@ -103,41 +157,15 @@ final class SettingsModel {
             proposed.additionalChannels.append(channel)
         }
         guard !channel.channelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw StorageError.message("チャンネルIDを入力してください。")
+            throw StorageError.message("投稿先のチャンネルを選択してください。")
         }
         try proposed.validateChannels()
         try app.updateConfiguration(proposed)
     }
 
-    var channels: [PostingChannel] {
-        app.configuration.channels + (newChannel.map { [$0] } ?? [])
-    }
-
-    func startAddingChannel() -> String {
-        if let newChannel { return newChannel.id }
-        let id = app.configuration.channels.isEmpty ? Configuration.defaultDestinationID : UUID().uuidString
-        newChannel = PostingChannel(id: id)
-        return id
-    }
-
-    func commitChannel(_ id: String) throws {
-        guard let channel = channelEdits[id], channels.contains(where: { $0.id == id }) else { return }
-        if newChannel?.id == id, channel.channelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
-        try saveChannel(channel)
-        if newChannel?.id == id { newChannel = nil }
-        channelEdits.removeValue(forKey: id)
-    }
-
     func removeChannel(_ id: String) throws {
-        if newChannel?.id == id {
-            newChannel = nil
-            channelEdits.removeValue(forKey: id)
-            return
-        }
-        let pending = channelEdits.removeValue(forKey: id)
         var proposed = app.configuration
         proposed.removeChannel(id)
-        do { try app.updateConfiguration(proposed) }
-        catch { channelEdits[id] = pending; throw error }
+        try app.updateConfiguration(proposed)
     }
 }
