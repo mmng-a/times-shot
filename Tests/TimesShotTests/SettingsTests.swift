@@ -1,4 +1,5 @@
 import AppKit
+import AuthenticationServices
 import SwiftUI
 import Testing
 import TimesShotCore
@@ -119,6 +120,24 @@ import TimesShotCore
     try fixture.app.connect(testCredentials())
     #expect(fixture.app.canSend)
     #expect(fixture.app.configuration.selectedChannel?.channelID == "C00000001")
+}
+
+@MainActor @Test func browserCancellationIsVisibleAndLeavesTheExistingConnectionIntact() async throws {
+    _ = NSApplication.shared
+    let fixture = try SettingsFixture(connected: true)
+    defer { fixture.cleanup() }
+    let original = fixture.app.connection.credentials
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in }, client: testSlackClient(),
+                                 authenticate: { _, _ in
+        throw NSError(domain: ASWebAuthenticationSessionErrorDomain, code: ASWebAuthenticationSessionError.canceledLogin.rawValue)
+    })
+    let window = NSWindow()
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    await settings.connect(window: window)
+    #expect(settings.connectionError?.contains("キャンセル") == true)
+    #expect(!settings.checkingConnection)
+    #expect(fixture.app.connection.credentials == original)
 }
 
 @MainActor @Test func settingsUseLocalizedToolbarAndChooseChannelsWithoutIDFields() async throws {

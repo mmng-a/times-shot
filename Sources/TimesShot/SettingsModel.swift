@@ -1,11 +1,13 @@
 import AppKit
 import AuthenticationServices
 import Observation
+import OSLog
 import ServiceManagement
 import TimesShotCore
 
 @MainActor @Observable
 final class SettingsModel {
+    private static let logger = Logger(subsystem: "jp.sendocorp.TimesShot", category: "OAuth")
     let app: AppModel
     var checkingConnection = false
     var connectionError: String?
@@ -17,16 +19,18 @@ final class SettingsModel {
     private(set) var filteredChannels: [SlackChannel] = []
     var launchAtLogin = [.enabled, .requiresApproval].contains(SMAppService.mainApp.status)
     @ObservationIgnored private let client: SlackClient
-    @ObservationIgnored private let webAuthentication = SlackWebAuthentication()
+    @ObservationIgnored private let authenticate: @MainActor (URL, NSWindow) async throws -> URL
     @ObservationIgnored private let applyShortcut: (Configuration) throws -> Void
     @ObservationIgnored private var loadedConnectionID: UUID?
     @ObservationIgnored private var channelRequestID: UUID?
 
     init(app: AppModel, applyShortcut: @escaping (Configuration) throws -> Void,
-         client: SlackClient = SlackClient()) {
+         client: SlackClient = SlackClient(),
+         authenticate: (@MainActor (URL, NSWindow) async throws -> URL)? = nil) {
         self.app = app
         self.applyShortcut = applyShortcut
         self.client = client
+        self.authenticate = authenticate ?? SlackWebAuthentication().authenticate
     }
 
     func connect(window: NSWindow?) async {
@@ -42,16 +46,29 @@ final class SettingsModel {
         checkingConnection = true
         connectionError = nil
         defer { checkingConnection = false }
+        var stage = "browser"
         do {
             let authorization = try SlackAuthorization()
-            let callback = try await webAuthentication.authenticate(url: authorization.url(clientID: app.connection.clientID), window: window)
+            Self.logger.notice("Connection started")
+            let callback = try await authenticate(authorization.url(clientID: app.connection.clientID), window)
+            stage = "callback"
+            Self.logger.notice("Browser returned a callback")
             let code = try authorization.code(from: callback)
+            stage = "token_exchange"
+            Self.logger.notice("Callback validated; exchanging authorization code")
             let credentials = try await client.authorize(code: code, verifier: authorization.verifier, clientID: app.connection.clientID)
+            stage = "save_connection"
+            Self.logger.notice("Slack credentials verified")
             try app.connect(credentials)
+            Self.logger.notice("Connection saved")
             await reloadChannels()
         } catch {
             let nsError = error as NSError
-            if nsError.domain != ASWebAuthenticationSessionErrorDomain || nsError.code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
+            Self.logger.error("Connection failed: stage=\(stage, privacy: .public) domain=\(nsError.domain, privacy: .public) code=\(nsError.code)")
+            if nsError.domain == ASWebAuthenticationSessionErrorDomain,
+               nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                connectionError = "Slackへの接続がキャンセルされました。許可後に画面が閉じた場合は、もう一度接続してください。"
+            } else {
                 connectionError = error.localizedDescription
             }
         }
