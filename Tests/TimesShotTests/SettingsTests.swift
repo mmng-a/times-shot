@@ -140,6 +140,22 @@ import TimesShotCore
     #expect(fixture.app.connection.credentials == original)
 }
 
+@MainActor @Test func authenticationCallbackCanArriveOutsideTheMainActor() async throws {
+    let authentication = SlackWebAuthentication()
+    let callback = try #require(URL(string: "timesshot://oauth/callback?state=test&code=test"))
+    let received: URL = try await withCheckedThrowingContinuation { continuation in
+        let completion = authentication.completionHandler(continuation)
+        Task.detached { completion(callback, nil) }
+    }
+    #expect(received == callback)
+    await #expect(throws: SlackAuthorizationError.invalidCallback) {
+        try await withCheckedThrowingContinuation { continuation in
+            let completion = authentication.completionHandler(continuation)
+            Task.detached { completion(nil, nil) }
+        } as URL
+    }
+}
+
 @MainActor @Test func settingsUseLocalizedToolbarAndChooseChannelsWithoutIDFields() async throws {
     _ = NSApplication.shared
     let fixture = try SettingsFixture(connected: true)

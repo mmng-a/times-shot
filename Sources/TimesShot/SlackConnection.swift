@@ -88,19 +88,25 @@ final class SlackWebAuthentication: NSObject, ASWebAuthenticationPresentationCon
         guard session == nil else { throw StorageError.message("Slackへの接続を開始しています。") }
         self.window = window
         return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callback: .customScheme("timesshot")) { [weak self] url, error in
-                Task { @MainActor in
-                    self?.session = nil
-                    if let error { continuation.resume(throwing: error) }
-                    else if let url { continuation.resume(returning: url) }
-                    else { continuation.resume(throwing: SlackAuthorizationError.invalidCallback) }
-                }
-            }
+            let session = ASWebAuthenticationSession(url: url, callback: .customScheme("timesshot"),
+                                                     completionHandler: completionHandler(continuation))
             session.presentationContextProvider = self
             self.session = session
             if !session.start() {
                 self.session = nil
                 continuation.resume(throwing: StorageError.message("Slackの接続画面を開けませんでした。"))
+            }
+        }
+    }
+
+    /// AuthenticationServices delivers replies on an XPC queue, outside the main actor.
+    nonisolated func completionHandler(_ continuation: CheckedContinuation<URL, Error>) -> @Sendable (URL?, Error?) -> Void {
+        { [weak self] url, error in
+            Task { @MainActor in
+                self?.session = nil
+                if let error { continuation.resume(throwing: error) }
+                else if let url { continuation.resume(returning: url) }
+                else { continuation.resume(throwing: SlackAuthorizationError.invalidCallback) }
             }
         }
     }
