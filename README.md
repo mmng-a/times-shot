@@ -1,8 +1,16 @@
 # Times Shot
 
-Slackを開かずに、自分のtimesなど登録したチャンネルへテキストと画像を投稿するmacOS用メニューバーアプリです。macOS 27.0以降に対応します。画面はSwiftUI、ウインドウ・入力・ショートカットは必要な箇所だけAppKitとCarbonを使用し、外部ライブラリには依存しません。
+**Slackを開かずに、ひとこと投稿。**
 
-SlackにはOAuthで接続し、参加しているチャンネルを一覧から選択します。利用者によるSlack Appの作成、トークンやチャンネルIDの手入力は不要です。開発者向けのSlack App設定と、署名・公証、配布、Slack Marketplace掲載に向けた準備は[一般公開の手順](docs/public-release.md)を参照してください。
+Times Shotは、メモや画像をtimesなどのチャンネルへ投稿するmacOSのメニューバーアプリです。Slackに接続し、参加しているチャンネルを一覧から選んで使い始められます。
+
+画像の貼り付けや添付にも対応し、入力画面を閉じても下書きは残ります。
+
+## 投稿の流れ
+
+1. `Shift + Space`で入力画面を開く。
+2. メモを入力する。画像は貼り付け・ドラッグ＆ドロップ・添付ボタンから追加できる。
+3. `⌘Enter`で送信する。入力画面が閉じ、元の作業へ戻れる。
 
 ## インストール
 
@@ -20,18 +28,9 @@ brew install --cask mmng-a/tap/times-shot
 
 配布版はDeveloper ID署名・Appleの公証を行っていません。初回起動がブロックされた場合は、入手元を確認し、システム設定の「プライバシーとセキュリティ」から「このまま開く」を選んでください。[Appleの案内](https://support.apple.com/ja-jp/102445)
 
-## ビルド
-
-Xcode 27以降を選択した状態で実行します。
-
-```sh
-bash scripts/test.sh
-bash scripts/build-app.sh
-```
-
-`dist/Times Shot.app`をApplicationsフォルダへコピーして開いてください。初期状態ではローカル用のアドホック署名を付けます。署名証明書がある場合は、`SIGNING_IDENTITY`環境変数で指定できます。
-
 ## Slackへの接続と投稿先の登録
+
+利用者によるSlack Appの作成、トークンやチャンネルIDの手入力は不要です。
 
 1. 設定ウインドウの「一般」で「Slackに接続」を押します。
 2. ブラウザで接続するワークスペースとアカウントを確認し、要求する権限を許可します。認可が完了するとアプリへ戻り、「アカウント」に接続先が表示されます。ワークスペースの設定によっては管理者の承認が必要です。
@@ -42,17 +41,6 @@ bash scripts/build-app.sh
 現在は1つのワークスペース・アカウントへの接続に対応しています。認証情報はこのMacのKeychainに保存し、一覧取得・送信時に有効期限を確認して必要に応じて更新します。トークンを設定ファイルやログへ出力しません。再接続が必要な場合は「一般」の「Slackに再接続」を押してください。
 
 「接続解除」はこのMacに保存した認証情報を削除します。登録した投稿先や下書きは保持します。Slack Appをワークスペースから削除する場合は、Slack側のアプリ管理で別途操作します。送信中・送信待ち、または画像の読み込み中は、再接続と接続解除を行えません。
-
-要求するUser Token Scopesは次の4つです。会話履歴を取得する権限は要求しません。
-
-| 権限 | 用途 |
-| --- | --- |
-| `chat:write` | 本人名義のテキスト投稿 |
-| `files:write` | 画像のアップロード・共有 |
-| `channels:read` | 公開チャンネルの基本情報取得 |
-| `groups:read` | 参加済みプライベートチャンネルの基本情報取得 |
-
-接続・一覧取得の仕様は[PKCE](https://docs.slack.dev/authentication/using-pkce/)と[users.conversations](https://docs.slack.dev/reference/methods/users.conversations/)、投稿の仕様は[chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)と[files.completeUploadExternal](https://docs.slack.dev/reference/methods/files.completeUploadExternal/)を参照してください。
 
 ## 操作
 
@@ -77,12 +65,6 @@ bash scripts/build-app.sh
 送信待ちがあっても次の投稿を書けます。送信は受付順に1件ずつ行い、Slackの制限に合わせて間隔を空けます。投稿時の接続先を保持するため、その後に投稿先を切り替えたり設定を変更したりしても、送信待ちの投稿先は変わりません。送信中はメニューバーに件数を表示し、成功通知は出しません。
 
 失敗時は本文冒頭・画像名・原因を通知し、その投稿を破棄して次へ進みます。自動再送・履歴・復元はありません。投稿結果が不明な場合も再送しません。通知を許可していない場合はメニューバーのエラー表示で確認できます。エラー表示は直近1件のみで、アプリ終了時に消えます。
-
-Slack通信の失敗理由はmacOSの統合ログの`Slack`カテゴリへ記録します。API名、HTTPステータス、SlackのリクエストID、引数エラーの詳細を確認できます。`OAuth`カテゴリには、ブラウザからの応答受信、認可コードの交換、接続情報の保存といった処理段階と、失敗時のエラードメイン・番号を記録します。リクエスト本文・画像データ・認証情報・認可コード・コールバックURL・アップロードURLは記録しません。アプリのログは次のコマンドで確認できます。
-
-```sh
-log show --last 1h --style compact --predicate 'process == "TimesShot" AND subsystem == "jp.sendocorp.TimesShot" AND (category == "Slack" OR category == "OAuth")'
-```
 
 送信中・送信待ちがある状態で終了する場合は確認します。「破棄して終了」を選ぶと残りを破棄しますが、送信中の投稿はSlack側で完了する可能性があります。入力中の下書きは別に保持します。異常終了時の送信キューは復元しません。
 
@@ -110,11 +92,47 @@ PNG・JPEG・GIF・WebPは元データを保持し、HEIC・TIFF・BMPなど、I
 
 下書きと添付画像は`~/Library/Application Support/TimesShot/`に保存し、送信が終了した画像や破棄した画像は削除します。
 
+## Slackの権限と接続仕様
+
+要求するUser Token Scopesは次の4つです。会話履歴を取得する権限は要求しません。
+
+| 権限 | 用途 |
+| --- | --- |
+| `chat:write` | 本人名義のテキスト投稿 |
+| `files:write` | 画像のアップロード・共有 |
+| `channels:read` | 公開チャンネルの基本情報取得 |
+| `groups:read` | 参加済みプライベートチャンネルの基本情報取得 |
+
+接続・一覧取得の仕様は[PKCE](https://docs.slack.dev/authentication/using-pkce/)と[users.conversations](https://docs.slack.dev/reference/methods/users.conversations/)、投稿の仕様は[chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)と[files.completeUploadExternal](https://docs.slack.dev/reference/methods/files.completeUploadExternal/)を参照してください。
+
+## 開発
+
+画面はSwiftUI、ウインドウ・入力・ショートカットは必要な箇所だけAppKitとCarbonを使用し、外部ライブラリには依存しません。開発者向けのSlack App設定と配布・Slack Marketplace掲載の準備は[一般公開の手順](docs/public-release.md)を参照してください。
+
+### ビルド
+
+Xcode 27以降を選択した状態で実行します。
+
+```sh
+bash scripts/test.sh
+bash scripts/build-app.sh
+```
+
+`dist/Times Shot.app`をApplicationsフォルダへコピーして開いてください。初期状態ではローカル用のアドホック署名を付けます。署名証明書がある場合は、`SIGNING_IDENTITY`環境変数で指定できます。
+
 ## 検証
 
 自動テストでは、PKCEとコールバックの検証、バックグラウンドからの認可結果受信、トークン更新の同時実行防止、接続解除・接続先変更時の認証情報の保護、チャンネル一覧のページ取得と登録、Markdown変換、キューの順序と失敗後の継続、終了時のキャンセル、Slackへのリクエスト順序、アップロード失敗時の本文単独投稿の防止、結果不明時の再送防止、画像変換・下書き保存、画像とテキストのペーストを確認します。ペーストのテストには専用のクリップボードを使用し、通常のクリップボードは変更しません。通信テストはモックを使用し、実際のSlackへ投稿しません。
 
 実際のSlack接続後に、本人名義の投稿、画像付き投稿、グローバルショートカット、IME、フルスクリーン、元のアプリへの復帰、通知、自動起動を実機で確認してください。
+
+## 診断ログ
+
+Slack通信の失敗理由はmacOSの統合ログの`Slack`カテゴリへ記録します。API名、HTTPステータス、SlackのリクエストID、引数エラーの詳細を確認できます。`OAuth`カテゴリには、ブラウザからの応答受信、認可コードの交換、接続情報の保存といった処理段階と、失敗時のエラードメイン・番号を記録します。リクエスト本文・画像データ・認証情報・認可コード・コールバックURL・アップロードURLは記録しません。アプリのログは次のコマンドで確認できます。
+
+```sh
+log show --last 1h --style compact --predicate 'process == "TimesShot" AND subsystem == "jp.sendocorp.TimesShot" AND (category == "Slack" OR category == "OAuth")'
+```
 
 ## 開発とリリース
 
