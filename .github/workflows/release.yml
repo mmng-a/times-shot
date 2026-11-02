@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.repository == 'mmng-a/times-shot' && !github.event.repository.private
+    runs-on: xcode-27
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check release version
+        run: |
+          version=$(plutil -extract CFBundleShortVersionString raw Resources/Info.plist)
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Test
+        run: bash scripts/test.sh
+      - name: Package
+        run: bash scripts/package-release.sh
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "Times Shot $GITHUB_REF_NAME" --generate-notes \
+            --notes 'Apple Silicon・macOS 27.0以降に対応。Developer ID署名・Appleの公証は行っていません。初回起動の手順はREADMEを参照してください。' \
+            dist/TimesShot-*-macos-arm64.zip \
+            dist/TimesShot-*-macos-arm64.zip.sha256

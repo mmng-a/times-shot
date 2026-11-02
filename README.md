@@ -114,7 +114,7 @@ PNG・JPEG・GIF・WebPは元データを保持し、HEIC・TIFF・BMPなど、I
 
 ## 開発とリリース
 
-開発は`dev`で行い、検証・レビューを終えた変更を`main`へ反映します。通常のブランチへのpushではリリースを作成しません。公開版には`v0.1.0`のようなタグを付けます。配布物の作成とtap更新は[一般公開の手順](docs/public-release.md#5-macosアプリを配布する)を参照してください。
+開発は`dev`で行い、検証・レビューを終えた変更を`main`へ反映します。公開リポジトリで`v0.1.0`のようなタグをpushしたときだけ、[Releaseワークフロー](.github/workflows/release.yml)がmacOS上でテスト・ビルド・ZIP作成・GitHub Release公開を行います。通常のブランチへのpushやPRでは起動しません。タグと`Info.plist`のバージョンが一致しない場合は失敗します。Homebrew tapの版番号・SHA256はリリース後に更新します。配布物の作成とtap更新は[一般公開の手順](docs/public-release.md#5-macosアプリを配布する)を参照してください。
 
 ## ライセンス
 

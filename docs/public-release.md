@@ -149,7 +149,16 @@ bash scripts/package-release.sh
 
 ### GitHub ReleaseとHomebrew tap
 
-リリース対象の`main`のコミットにタグを付け、ZIPとSHA256ファイルを添付します。次は初版の例です。
+リリース対象の`main`のコミットにタグを付けます。`v`に続く版番号が`Info.plist`と一致すると、Releaseワークフローが`xcode-27`のmacOSランナーでテスト・パッケージ作成を行い、ZIPとSHA256ファイルを添付したGitHub Releaseを公開します。ブランチへのpushやPRでは起動せず、非公開リポジトリでは実行しません。初版`v0.1.0`はローカルで作成したZIPを公開しています。
+
+次回リリースの例です。事前に版番号を更新した変更を検証し、`main`へ反映します。
+
+```sh
+git tag -a v0.1.1 -m 'Times Shot 0.1.1'
+git push origin v0.1.1
+```
+
+CIを利用せずローカルで公開する場合は、ワークフローを無効にしたうえでZIPとSHA256ファイルを添付します。次は初版で使用した手順です。
 
 ```sh
 git tag -a v0.1.0 -m 'Times Shot 0.1.0'
