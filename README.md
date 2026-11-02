@@ -1,22 +1,24 @@
 # Times Shot
 
-**Slackを開かずに、ひとこと投稿。**
+[English](README.md) | [日本語](README.ja.md)
 
-Times Shotは、メモや画像をtimesなどのチャンネルへ投稿するmacOSのメニューバーアプリです。Slackに接続し、参加しているチャンネルを一覧から選んで使い始められます。
+**Post a quick note without opening Slack.**
 
-画像の貼り付けや添付にも対応し、入力画面を閉じても下書きは残ります。
+Times Shot is a macOS menu bar app for posting notes and images to your times channel or other Slack channels. Connect to Slack and choose from the channels you belong to.
 
-## 投稿の流れ
+Paste or attach images, and keep your draft when you close the composer.
 
-1. `Shift + Space`で入力画面を開く。
-2. メモを入力する。画像は貼り付け・ドラッグ＆ドロップ・添付ボタンから追加できる。
-3. `⌘Enter`で送信する。入力画面が閉じ、元の作業へ戻れる。
+## Posting
 
-## インストール
+1. Press `Shift + Space` to open the composer.
+2. Write a note. Add images by pasting, dragging and dropping, or using the attachment button.
+3. Press `⌘Enter` to send. The composer closes so you can return to your work.
 
-Apple Silicon搭載Mac、macOS 27.0以降に対応します。
+## Install
 
-Homebrew 7以降では、初回にtapを追加し、Times ShotのCaskを信頼対象として登録します。
+Requires an Apple Silicon Mac running macOS 27.0 or later.
+
+With Homebrew 7 or later, add the tap and trust the Times Shot cask before the first installation:
 
 ```sh
 brew tap mmng-a/tap
@@ -24,120 +26,122 @@ brew trust --cask mmng-a/tap/times-shot
 brew install --cask mmng-a/tap/times-shot
 ```
 
-[GitHub Releases](https://github.com/mmng-a/times-shot/releases)のZIPを展開し、`Times Shot.app`をApplicationsフォルダへコピーする方法でもインストールできます。
+Alternatively, extract the ZIP from [GitHub Releases](https://github.com/mmng-a/times-shot/releases) and copy `Times Shot.app` to your Applications folder.
 
-配布版はDeveloper ID署名・Appleの公証を行っていません。初回起動がブロックされた場合は、入手元を確認し、システム設定の「プライバシーとセキュリティ」から「このまま開く」を選んでください。[Appleの案内](https://support.apple.com/ja-jp/102445)
+Releases are not signed with Developer ID or notarized by Apple. If macOS blocks the first launch, verify the download source, then choose **Open Anyway** in System Settings → Privacy & Security. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
-## Slackへの接続と投稿先の登録
+## Connect to Slack and choose channels
 
-利用者によるSlack Appの作成、トークンやチャンネルIDの手入力は不要です。
+You do not need to create a Slack app or enter tokens or channel IDs.
 
-1. 設定ウインドウの「一般」で「Slackに接続」を押します。
-2. ブラウザで接続するワークスペースとアカウントを確認し、要求する権限を許可します。認可が完了するとアプリへ戻り、「アカウント」に接続先が表示されます。ワークスペースの設定によっては管理者の承認が必要です。
-3. 設定の「チャンネル」を開き、「追加するチャンネルを検索」で名前を絞り込み、一覧の行または「＋」を押して投稿先へ追加します。本人が参加している公開・プライベートチャンネルが対象で、アーカイブ済みチャンネルとDMは一覧に含めません。
-4. 投稿画面上部のメニューから投稿先を選びます。複数の投稿先を登録でき、登録済みの行にはチェックマークが付きます。候補を更新する場合は「一覧を再取得」を押します。登録を解除する場合は「登録した投稿先」で行を選び、「−」を押します。
-5. エラー通知を受け取るため、macOSの通知を許可してください。ログイン時起動は初回起動時に有効化を試み、設定から変更できます。OSの承認が必要な場合はシステム設定で許可してください。
+Some menu items and messages are currently displayed in Japanese.
 
-現在は1つのワークスペース・アカウントへの接続に対応しています。認証情報はこのMacのKeychainに保存し、一覧取得・送信時に有効期限を確認して必要に応じて更新します。トークンを設定ファイルやログへ出力しません。再接続が必要な場合は「一般」の「Slackに再接続」を押してください。
+1. Open **General** in settings and click **Connect to Slack**.
+2. In the browser, check the workspace and account, then grant the requested permissions. When authorization finishes, the app shows your connected account under **アカウント** (Account). Your workspace may require administrator approval.
+3. Open **Channels** in settings. Use **Search channels to add** to filter by name, then click a row or **＋** to save it as a destination. Public and private channels you belong to are available; archived channels and DMs are excluded.
+4. Choose a destination from the menu at the top of the composer. You can save multiple channels; saved channels have a checkmark. Use **Refresh channels** to update the list. To remove a destination, select it under **Saved destinations** and click **−**.
+5. Allow macOS notifications to receive posting errors. Times Shot attempts to enable launch at login on its first launch; you can change this in settings. If macOS requires approval, grant it in System Settings.
 
-「接続解除」はこのMacに保存した認証情報を削除します。登録した投稿先や下書きは保持します。Slack Appをワークスペースから削除する場合は、Slack側のアプリ管理で別途操作します。送信中・送信待ち、または画像の読み込み中は、再接続と接続解除を行えません。
+One workspace and account can be connected at a time. Credentials are stored in Keychain on this Mac. Times Shot checks token expiry when listing channels or sending a post and refreshes tokens as needed. Tokens are not written to configuration files or logs. When reconnection is required, click **Reconnect to Slack** in **General**.
 
-## 操作
+**Disconnect** removes the credentials saved on this Mac and keeps your saved destinations and drafts. To remove the Slack app from a workspace, use Slack's app management separately. Reconnection and disconnection are unavailable while posts are sending or queued, or images are being imported.
 
-| 操作 | 動作 |
+## Controls
+
+| Action | Result |
 | --- | --- |
-| Shift + Space | 入力画面の表示・非表示。下書きを保持 |
-| ⌘W、ウインドウの閉じるボタン | 下書きを保持して閉じる |
-| Esc | 本文・画像を破棄して閉じる。日本語変換中は変換の取り消しを優先 |
-| Enter | 改行 |
-| ⌘Enter、送信ボタン | キューへ追加して入力画面を閉じる |
-| ⌘V | 画像または書式付きテキストを貼り付ける |
-| ⌘⇧A、ツールバーのクリップ | 画像を添付する |
-| ⌘,、メニューバーの「設定…」 | 設定を開く |
-| ⌘B、⌘I | 太字・斜体を切り替える |
-| ⌘⇧X、⌘⇧C | 取り消し線・コードを切り替える |
-| ⌘Z、⌘⇧Z | 編集・書式変更を取り消す・やり直す |
-| 画像のドロップ、添付ボタン | 画像を添付する |
-| 投稿画面上部の投稿先メニュー | 登録したチャンネルへ切り替える。本文と添付は保持 |
+| Shift + Space | Show or hide the composer, keeping the draft |
+| ⌘W or the window's close button | Close the composer, keeping the draft |
+| Esc | Discard the text and images and close. During Japanese text conversion, cancel the conversion first |
+| Enter | Insert a newline |
+| ⌘Enter or the send button | Queue the post and close the composer |
+| ⌘V | Paste images or formatted text |
+| ⌘⇧A or the toolbar paperclip | Attach images |
+| ⌘, or the menu bar's **設定…** (Settings) | Open settings |
+| ⌘B or ⌘I | Toggle bold or italic |
+| ⌘⇧X or ⌘⇧C | Toggle strikethrough or code |
+| ⌘Z or ⌘⇧Z | Undo or redo editing and formatting |
+| Drop images or use the attachment button | Attach images |
+| Destination menu at the top of the composer | Switch between saved channels, keeping text and attachments |
 
-選んだ投稿先は、投稿後やアプリの再起動後も維持します。同じワークスペース・アカウントへの再接続では、登録した投稿先を保持します。下書きがある間は、設定画面で選択中の投稿先の削除や、別のワークスペース・アカウントへの接続はできません。投稿・添付・チャンネル切り替えは「投稿」メニューからも操作できます。
+The selected destination is kept after posting and restarting the app. Reconnecting to the same workspace and account keeps saved destinations. While a draft exists, you cannot remove its selected destination in settings or connect to a different workspace or account. Posting, attachments and destination selection are also available from the **投稿** (Post) menu.
 
-送信待ちがあっても次の投稿を書けます。送信は受付順に1件ずつ行い、Slackの制限に合わせて間隔を空けます。投稿時の接続先を保持するため、その後に投稿先を切り替えたり設定を変更したりしても、送信待ちの投稿先は変わりません。送信中はメニューバーに件数を表示し、成功通知は出しません。
+You can write another post while earlier posts are queued. Posts are sent one at a time in the order they were accepted, with spacing to respect Slack's limits. Each queued post keeps its original destination even if you later switch channels or change settings. The menu bar shows the number of pending posts. Successful posts do not trigger notifications.
 
-失敗時は本文冒頭・画像名・原因を通知し、その投稿を破棄して次へ進みます。自動再送・履歴・復元はありません。投稿結果が不明な場合も再送しません。通知を許可していない場合はメニューバーのエラー表示で確認できます。エラー表示は直近1件のみで、アプリ終了時に消えます。
+If a post fails, a notification shows the beginning of its text, image names and the error. That post is discarded and the queue continues. There is no automatic retry, history or recovery, including when the result of a post is unknown. If notifications are disabled, check the menu bar's error indicator. It keeps only the most recent error and clears when the app quits.
 
-送信中・送信待ちがある状態で終了する場合は確認します。「破棄して終了」を選ぶと残りを破棄しますが、送信中の投稿はSlack側で完了する可能性があります。入力中の下書きは別に保持します。異常終了時の送信キューは復元しません。
+Quitting with posts sending or queued requires confirmation. **破棄して終了** (Discard and Quit) discards the remaining posts, but a post already sending may still complete on Slack. Your draft is kept separately. The queue is not restored after an unexpected exit.
 
-## 画像・書式
+## Images and formatting
 
-PNG・JPEG・GIF・WebPは元データを保持し、HEIC・TIFF・BMPなど、ImageIOで読み込める静止画像はPNGへ変換します。GIFなどを静止画へ変換しません。変換が必要な複数フレーム画像は、意図せず内容を失わないよう添付時にエラーを表示します。画像のサムネイルは縮小して生成し、投稿用画像は縮小しません。
+PNG, JPEG, GIF and WebP images keep their original data. Other still images supported by ImageIO, including HEIC, TIFF and BMP, are converted to PNG. Animated GIFs are not converted to still images. If a multi-frame image requires conversion, attachment fails with an error rather than silently losing frames. Thumbnails are resized; images sent to Slack are not.
 
-本文はmacOS標準のリッチテキスト入力を使用します。太字・斜体・取り消し線・コードは、文字を選択してショートカットまたは右クリックの「書式」から切り替えます。選択せずに切り替えると、その後の入力に適用します。書式用のツールバーは表示しません。コードに改行が含まれる場合は、Slackのコードブロックとして投稿します。書式付きテキストのペーストではリンクも保持します。
+The composer uses macOS's native rich text input. Select text and use a shortcut or the context menu's **書式** (Format) submenu to toggle bold, italic, strikethrough or code. Without a selection, formatting applies to subsequent input. There is no formatting toolbar. Code containing a newline is sent as a Slack code block. Pasting formatted text preserves links.
 
-本文をすべて削除すると、入力書式は標準に戻ります。空の状態で書式を選び直した場合は、選んだ書式で入力できます。
+Deleting all text resets formatting to the default. You can choose a format again while the composer is empty to apply it to new text.
 
-入力中の記号からも書式を設定できます。閉じる記号を入力すると記号が消え、囲んだ文字に書式が付きます。
+You can also apply formatting while typing. Entering the closing marker removes the markers and formats the enclosed text.
 
-| 入力 | 変換結果 |
+| Input | Result |
 | --- | --- |
-| `*太字*`、`**太字**` | 太字 |
-| `_斜体_` | 斜体 |
-| `~取り消し~`、`~~取り消し~~` | 取り消し線 |
-| `` `コード` `` | コード |
-| 行頭で`- `、`* ` | 箇条書き |
+| `*bold*` or `**bold**` | Bold |
+| `_italic_` | Italic |
+| `~strikethrough~` or `~~strikethrough~~` | Strikethrough |
+| `` `code` `` | Code |
+| `- ` or `* ` at the start of a line | Bulleted list |
 
-箇条書きではEnterで次の項目を作り、空の項目でEnterを押すと通常の段落へ戻ります。項目の先頭でBackspaceを押しても箇条書きを解除できます。自動変換も⌘Zで取り消せます。日本語変換中とコード内では変換しません。記号の直前にバックスラッシュを入力すると、書式へ変換せず記号を残します。
+In a bulleted list, Enter creates the next item. Enter on an empty item returns to a normal paragraph; Backspace at the start of an item also removes the list formatting. Automatic formatting can be undone with ⌘Z. It does not run during Japanese text conversion or inside code. Type a backslash immediately before a marker to keep it as text.
 
-下書きは文字と書式を保存し、再起動後も復元します。以前のMarkdown形式の下書きも、太字・斜体・取り消し線・コード・リンクを装飾した状態で読み込みます。引用・番号付きリストは、行頭に`> `・`1. `などを入力します。投稿時にSlackで利用できる書式へ変換し、フォントの種類・サイズ・色・下線などは送信しません。見出し・表・HTML・本文内の画像・メンション候補には対応しません。装飾の変換仕様は[Slackのmrkdwn仕様](https://docs.slack.dev/messaging/formatting-message-text/)に従います。
+Drafts preserve text and formatting across restarts. Older Markdown drafts also restore bold, italic, strikethrough, code and links as formatted text. For quotes and numbered lists, type prefixes such as `> ` or `1. `. Text is converted to Slack-compatible formatting when sent; font family, size, color and underline are not sent. Headings, tables, HTML, inline images and mention suggestions are not supported. Formatting follows [Slack's mrkdwn specification](https://docs.slack.dev/messaging/formatting-message-text/).
 
-下書きと添付画像は`~/Library/Application Support/TimesShot/`に保存し、送信が終了した画像や破棄した画像は削除します。
+Drafts and attached images are stored in `~/Library/Application Support/TimesShot/`. Images are deleted after their post finishes or when discarded.
 
-## Slackの権限と接続仕様
+## Slack permissions and connection
 
-要求するUser Token Scopesは次の4つです。会話履歴を取得する権限は要求しません。
+Times Shot requests these four User Token Scopes. It does not request conversation history scopes.
 
-| 権限 | 用途 |
+| Scope | Purpose |
 | --- | --- |
-| `chat:write` | 本人名義のテキスト投稿 |
-| `files:write` | 画像のアップロード・共有 |
-| `channels:read` | 公開チャンネルの基本情報取得 |
-| `groups:read` | 参加済みプライベートチャンネルの基本情報取得 |
+| `chat:write` | Post text as you |
+| `files:write` | Upload and share images |
+| `channels:read` | Read basic information about public channels |
+| `groups:read` | Read basic information about private channels you belong to |
 
-接続・一覧取得の仕様は[PKCE](https://docs.slack.dev/authentication/using-pkce/)と[users.conversations](https://docs.slack.dev/reference/methods/users.conversations/)、投稿の仕様は[chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)と[files.completeUploadExternal](https://docs.slack.dev/reference/methods/files.completeUploadExternal/)を参照してください。
+For the connection and channel listing APIs, see [PKCE](https://docs.slack.dev/authentication/using-pkce/) and [users.conversations](https://docs.slack.dev/reference/methods/users.conversations/). For posting, see [chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/) and [files.completeUploadExternal](https://docs.slack.dev/reference/methods/files.completeUploadExternal/).
 
-## 開発
+## Development
 
-画面はSwiftUI、ウインドウ・入力・ショートカットは必要な箇所だけAppKitとCarbonを使用し、外部ライブラリには依存しません。開発者向けのSlack App設定と配布・Slack Marketplace掲載の準備は[一般公開の手順](docs/public-release.md)を参照してください。
+The interface uses SwiftUI, with AppKit and Carbon where needed for windows, input and shortcuts. There are no external library dependencies. See the [public release guide (Japanese)](docs/public-release.md) for developer Slack app configuration, distribution and Slack Marketplace preparation.
 
-### ビルド
+### Build
 
-Xcode 27以降を選択した状態で実行します。
+Select Xcode 27 or later, then run:
 
 ```sh
 bash scripts/test.sh
 bash scripts/build-app.sh
 ```
 
-`dist/Times Shot.app`をApplicationsフォルダへコピーして開いてください。初期状態ではローカル用のアドホック署名を付けます。署名証明書がある場合は、`SIGNING_IDENTITY`環境変数で指定できます。
+Copy `dist/Times Shot.app` to your Applications folder and open it. The default build uses an ad-hoc signature for local use. If you have a signing certificate, you can select it with the `SIGNING_IDENTITY` environment variable.
 
-## 検証
+## Validation
 
-自動テストでは、PKCEとコールバックの検証、バックグラウンドからの認可結果受信、トークン更新の同時実行防止、接続解除・接続先変更時の認証情報の保護、チャンネル一覧のページ取得と登録、Markdown変換、キューの順序と失敗後の継続、終了時のキャンセル、Slackへのリクエスト順序、アップロード失敗時の本文単独投稿の防止、結果不明時の再送防止、画像変換・下書き保存、画像とテキストのペーストを確認します。ペーストのテストには専用のクリップボードを使用し、通常のクリップボードは変更しません。通信テストはモックを使用し、実際のSlackへ投稿しません。
+Automated tests cover PKCE and callback validation, authorization replies from a background thread, serialized token refresh, credential protection during disconnection and account changes, channel pagination and registration, Markdown conversion, queue ordering and continuation after failure, cancellation on exit, Slack request ordering, preventing text-only posts after image upload failure, preventing retries when a result is unknown, image conversion, draft storage, and image and text pasting. Paste tests use a dedicated pasteboard and leave the normal clipboard untouched. Network tests use mocks and do not post to Slack.
 
-実際のSlack接続後に、本人名義の投稿、画像付き投稿、グローバルショートカット、IME、フルスクリーン、元のアプリへの復帰、通知、自動起動を実機で確認してください。
+After connecting to Slack, verify posts under your own identity, image posts, global shortcuts, IME input, full-screen behavior, returning to the previous app, notifications and launch at login on a real Mac.
 
-## 診断ログ
+## Diagnostic logs
 
-Slack通信の失敗理由はmacOSの統合ログの`Slack`カテゴリへ記録します。API名、HTTPステータス、SlackのリクエストID、引数エラーの詳細を確認できます。`OAuth`カテゴリには、ブラウザからの応答受信、認可コードの交換、接続情報の保存といった処理段階と、失敗時のエラードメイン・番号を記録します。リクエスト本文・画像データ・認証情報・認可コード・コールバックURL・アップロードURLは記録しません。アプリのログは次のコマンドで確認できます。
+Slack communication failures are recorded in macOS's unified log under the `Slack` category. The log includes API names, HTTP status, Slack request IDs and argument error details. The `OAuth` category records connection stages, such as the browser reply, authorization code exchange and credential storage, plus error domains and codes on failure. Logs do not include request bodies, image data, credentials, authorization codes, callback URLs or upload URLs. To inspect the app's logs:
 
 ```sh
 log show --last 1h --style compact --predicate 'process == "TimesShot" AND subsystem == "jp.sendocorp.TimesShot" AND (category == "Slack" OR category == "OAuth")'
 ```
 
-## 開発とリリース
+## Development and releases
 
-開発は`dev`で行い、検証・レビューを終えた変更を`main`へ反映します。公開リポジトリで`v0.1.0`のようなタグをpushしたときだけ、[Releaseワークフロー](.github/workflows/release.yml)がmacOS上でテスト・ビルド・ZIP作成・GitHub Release公開を行います。通常のブランチへのpushやPRでは起動しません。タグと`Info.plist`のバージョンが一致しない場合は失敗します。Homebrew tapの版番号・SHA256はリリース後に更新します。配布物の作成とtap更新は[一般公開の手順](docs/public-release.md#5-macosアプリを配布する)を参照してください。
+Work on `dev`, then move verified and reviewed changes to `main`. Pushing a version tag such as `v0.1.0` in the public repository triggers the [Release workflow](.github/workflows/release.yml) to test, build, package the ZIP and publish a GitHub Release on macOS. Branch pushes and pull requests do not trigger it. The workflow fails if the tag and `Info.plist` version do not match. Update the version and SHA256 in the Homebrew tap after each release. See the [public release guide (Japanese)](docs/public-release.md#5-macosアプリを配布する) for packaging and tap maintenance.
 
-## ライセンス
+## License
 
 [MIT License](LICENSE)
