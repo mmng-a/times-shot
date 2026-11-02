@@ -172,6 +172,8 @@ gh release create v0.1.0 --verify-tag --title 'Times Shot 0.1.0' \
 `mmng-a/homebrew-tap`の`Casks/times-shot.rb`に、版番号、公開ZIPのURL、SHA256、対応macOSとCPUを設定します。更新時も同じ項目を変更し、`brew style`・`brew audit --cask`・ZIP取得を確認してpushします。利用者のインストールと更新のコマンドは次のとおりです。
 
 ```sh
+brew tap mmng-a/tap
+brew trust --cask mmng-a/tap/times-shot
 brew install --cask mmng-a/tap/times-shot
 brew upgrade --cask mmng-a/tap/times-shot
 ```

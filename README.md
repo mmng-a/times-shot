@@ -8,7 +8,11 @@ SlackにはOAuthで接続し、参加しているチャンネルを一覧から�
 
 Apple Silicon搭載Mac、macOS 27.0以降に対応します。
 
+Homebrew 7以降では、初回にtapを追加し、Times ShotのCaskを信頼対象として登録します。
+
 ```sh
+brew tap mmng-a/tap
+brew trust --cask mmng-a/tap/times-shot
 brew install --cask mmng-a/tap/times-shot
 ```
 
