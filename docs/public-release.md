@@ -10,7 +10,7 @@ Times ShotのSlack接続の設定と、一般公開に向けた準備をまと�
 - 利用者は「Slackに接続」からブラウザで権限を許可し、アプリへ戻る。
 - 本人が参加している公開・プライベートチャンネルを一覧から検索し、投稿先へ登録する。利用者によるトークン・チャンネルIDの入力は不要。
 - 本人名義で、本人が入力した文章と選択した画像を登録チャンネルへ送る。会話履歴の取得・閲覧は行わない。
-- macOSアプリはDeveloper IDで署名・公証し、HTTPSの配布ページからZIPで直接配布する方法を基本案とする。
+- macOSアプリはGitHub ReleasesとHomebrew tapで配布する。Apple Silicon・macOS 27.0以降を対象にアドホック署名を付け、Developer ID署名・公証は行わない。
 
 Slackとの接続には投稿権限を取得するOAuthを使います。本人確認用の「Sign in with Slack」だけでは投稿できません。現在は1つのワークスペース・アカウントへの接続に対応し、独立したサービスアカウントやログイン機能は設けていません。[Slack OAuth](https://docs.slack.dev/authentication/installing-with-oauth/)
 
@@ -27,10 +27,10 @@ Slack Marketplaceへの掲載と、macOSアプリの配布先は別です。直�
 | トークンの検証 | OAuth応答のユーザートークン種別・権限と、本人・ワークスペースのIDを検証 | 申請時の権限説明と一致することを確認 |
 | 送信キュー | 接続IDと投稿先を固定し、送信時に有効なトークンを取得 | 更新・接続解除・再接続時の実環境での検証 |
 | チャンネル登録 | 参加済みチャンネルを一覧から検索・登録 | 参加状況の変更・アーカイブ後のエラーを実環境で検証 |
-| アプリ署名 | 既定はアドホック署名 | Developer ID・Hardened Runtime・タイムスタンプ・公証 |
+| アプリ配布 | アドホック署名のApple Silicon版 | GitHub Release、Homebrew Cask、別環境での初回起動の検証 |
 | 公開情報 | README | 配布ページ、接続手順、プライバシーポリシー、問い合わせ先 |
 
-接続とトークン更新は[SlackConnection.swift](../Sources/TimesShot/SlackConnection.swift)、PKCEとコールバックの検証は[SlackAuthorization.swift](../Sources/TimesShotCore/SlackAuthorization.swift)、API通信は[SlackClient.swift](../Sources/TimesShotCore/SlackClient.swift)、設定操作は[SettingsModel.swift](../Sources/TimesShot/SettingsModel.swift)を参照してください。以下の掲載確認・試験配布・署名と公証は、一般公開に向けた後続作業です。
+接続とトークン更新は[SlackConnection.swift](../Sources/TimesShot/SlackConnection.swift)、PKCEとコールバックの検証は[SlackAuthorization.swift](../Sources/TimesShotCore/SlackAuthorization.swift)、API通信は[SlackClient.swift](../Sources/TimesShotCore/SlackClient.swift)、設定操作は[SettingsModel.swift](../Sources/TimesShot/SettingsModel.swift)を参照してください。Slack Marketplaceへの掲載確認と、別の利用者・ワークスペースでの試験は後続作業です。
 
 ## 1. Slackへの掲載可否を確認する
 
@@ -116,7 +116,7 @@ Client Secretやトークンをソース・配布物へ埋め込みません。P
 
 プライバシーポリシーには、Keychainの認証情報、端末内の下書き・画像・チャンネル設定、Slackへ送るデータ、エラー通知に表示する本文冒頭・画像名、診断ログ、保持期間と削除方法を実装に合わせて記載します。「会話履歴を取得しない」と「入力内容を端末に保存しない」は別です。
 
-OAuth対応版をDeveloper IDで署名・公証し、試験版を用意します。Slack Appの未掲載配布設定を確認したうえで、開発用とは別のワークスペースで、初回接続からチャンネル選択、文章・画像投稿、接続解除まで確認します。
+OAuth対応版の配布ZIPを用意します。Slack Appの未掲載配布設定を確認したうえで、開発用とは別のワークスペースで、初回接続からチャンネル選択、文章・画像投稿、接続解除まで確認します。
 
 未掲載での配布は初期利用者との試験に使えます。商用配布はMarketplaceへの提出・承認を前提に計画し、未掲載のままの本格配布や、利用者ごとにSlack Appを作らせる方法を審査の代わりにしません。利用先が管理者承認やMarketplace掲載を必須としている場合は、その制限に従います。[配布方法と管理者承認](https://docs.slack.dev/app-management/distribution/)
 
@@ -130,52 +130,42 @@ OAuth対応版をDeveloper IDで署名・公証し、試験版を用意します
 
 確認時点の目安は、初期審査が最大10営業日、新規アプリの機能審査が最大10週間です。確約ではないため、公開日は申請画面の見積もりと指摘対応を考慮して決めます。[審査手順](https://docs.slack.dev/slack-marketplace/slack-marketplace-review-guide/)、[掲載条件](https://docs.slack.dev/slack-marketplace/slack-marketplace-app-guidelines-and-requirements/)
 
-## 5. macOSアプリを署名・公証して配布する
+## 5. macOSアプリを配布する
 
-直接配布にはApple Developer ProgramのDeveloper ID Application証明書を用意します。Appleの公証はマルウェア等の自動検査であり、Mac App StoreのApp ReviewやSlackの審査とは別です。[Appleの公証手順](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+配布対象はApple Silicon・macOS 27.0以降です。アドホック署名を付けますが、Developer IDによる開発元の証明やAppleの公証はありません。初回起動がブロックされた場合は、入手元を確認して、システム設定の「プライバシーとセキュリティ」から「このまま開く」を選びます。[Appleの案内](https://support.apple.com/ja-jp/102445)
 
-現在のSwift Packageとビルドスクリプトを使う場合の手動実行例です。公開前に`Info.plist`のバージョン・ビルド番号を更新し、配布対象のCPUでビルドします。現在のスクリプトはUniversal Binaryの作成を指定していないため、Apple Silicon・Intelの両対応を自動的に保証しません。
+### ローカルで配布物を作る
 
-### ビルドと署名
-
-証明書名の例を実際の名前へ置き換え、リポジトリのルートで実行します。現行の`build-app.sh`はHardened Runtimeとタイムスタンプを指定していないため、公開用には後段の署名が必要です。
+1. `dev`で開発し、テストとレビューを終えてから`main`へ反映する。
+2. 公開版の`Resources/Info.plist`で`CFBundleShortVersionString`と`CFBundleVersion`を更新する。初版は`0.1.0`・`1`。
+3. 次のコマンドでテストとパッケージ作成を行う。
 
 ```sh
 bash scripts/test.sh
-SIGNING_IDENTITY='Developer ID Application: NAME (TEAM_ID)' bash scripts/build-app.sh
-codesign --force --options runtime --timestamp \
-  --sign 'Developer ID Application: NAME (TEAM_ID)' 'dist/Times Shot.app'
-codesign --verify --deep --strict 'dist/Times Shot.app'
-codesign --display --verbose=4 'dist/Times Shot.app'
+bash scripts/package-release.sh
 ```
 
-証明書がDeveloper ID Applicationで、Hardened Runtimeとタイムスタンプが付いていることを確認します。今後ヘルパーやフレームワークを同梱する場合は、それらを内側から署名する手順も必要です。
+`dist/TimesShot-0.1.0-macos-arm64.zip`とSHA256ファイルが生成されます。ZIPはアプリ本体とMIT LICENSEを含み、端末の設定・下書き・Keychainのデータは含めません。展開後のアドホック署名、バージョン、CPU、リソースを確認してから公開します。
 
-### 公証と配布ZIPの作成
+### GitHub ReleaseとHomebrew tap
 
-初回だけ、`notarytool store-credentials`の対話入力で公証用の認証情報をKeychainへ保存します。パスワードをスクリプトやGitへ記録しません。
+リリース対象の`main`のコミットにタグを付け、ZIPとSHA256ファイルを添付します。次は初版の例です。
 
 ```sh
-xcrun notarytool store-credentials 'TimesShot-notary'
+git tag -a v0.1.0 -m 'Times Shot 0.1.0'
+git push origin v0.1.0
+gh release create v0.1.0 --verify-tag --title 'Times Shot 0.1.0' \
+  --notes-file /path/to/release-notes.md \
+  dist/TimesShot-0.1.0-macos-arm64.zip \
+  dist/TimesShot-0.1.0-macos-arm64.zip.sha256
 ```
+
+`mmng-a/homebrew-tap`の`Casks/times-shot.rb`に、版番号、公開ZIPのURL、SHA256、対応macOSとCPUを設定します。更新時も同じ項目を変更し、`brew style`・`brew audit --cask`・ZIP取得を確認してpushします。利用者のインストールと更新のコマンドは次のとおりです。
 
 ```sh
-ditto -c -k --keepParent 'dist/Times Shot.app' /private/tmp/TimesShot-notarization.zip
-xcrun notarytool submit /private/tmp/TimesShot-notarization.zip \
-  --keychain-profile 'TimesShot-notary' --wait
+brew install --cask mmng-a/tap/times-shot
+brew upgrade --cask mmng-a/tap/times-shot
 ```
-
-結果が`Accepted`の場合だけ次へ進みます。失敗時は返されたsubmission IDで`notarytool log`を取得し、原因を修正して再提出します。
-
-```sh
-xcrun stapler staple 'dist/Times Shot.app'
-xcrun stapler validate 'dist/Times Shot.app'
-codesign --verify --deep --strict 'dist/Times Shot.app'
-spctl --assess --type execute --verbose=4 'dist/Times Shot.app'
-ditto -c -k --keepParent 'dist/Times Shot.app' 'dist/TimesShot.zip'
-```
-
-公証チケットはZIPではなく`.app`へ付け、その後で配布ZIPを作り直します。署名後のアプリ内容は変更しません。[Appleのカスタム公証手順](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
 
 ## 公開前の確認と公開後の運用
 
@@ -190,4 +180,4 @@ ditto -c -k --keepParent 'dist/Times Shot.app' 'dist/TimesShot.zip'
 - [ ] 配布URLから取得したZIPを別のMac・新しいユーザー環境で開き、Gatekeeper、OAuth復帰、Keychain、通知、ログイン時起動、IME、ショートカットを確認した。
 - [ ] 対応macOS・CPU、公開版番号、Slackの掲載可否・審査状況を配布ページに正しく表示した。
 
-公開時は、最終ZIP、ソースのコミット、バージョン、対応CPU、公証submission ID、検証結果をリリース記録に残します。初期の更新方法は最新版ZIPの手動ダウンロードでよく、自動更新機構は別の実装として扱います。新しい版ごとに署名・公証を行い、Slackの仕様変更と問い合わせへ対応します。
+公開時は、最終ZIPとSHA256、ソースのコミット、バージョン、対応CPU、署名・公証の有無、検証結果をリリース記録に残します。更新はGitHub Releasesからのダウンロード、またはHomebrewで行います。アプリ内の自動更新は実装していません。Slackの仕様変更と問い合わせへ対応します。
