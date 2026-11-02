@@ -7,6 +7,7 @@ import TimesShotCore
 final class SlackConnection {
     private(set) var credentials: SlackCredentials?
     private(set) var requiresReconnect = false
+    private(set) var loadError: String?
     let clientID: String
     @ObservationIgnored private let client: SlackClient
     @ObservationIgnored private let save: @MainActor (SlackCredentials?) throws -> Void
@@ -15,11 +16,15 @@ final class SlackConnection {
     init(clientID: String = Bundle.main.object(forInfoDictionaryKey: "SlackClientID") as? String ?? "",
          client: SlackClient = SlackClient(),
          read: @MainActor () throws -> SlackCredentials? = TokenStore.read,
-         save: @escaping @MainActor (SlackCredentials?) throws -> Void = TokenStore.save) throws {
+         save: @escaping @MainActor (SlackCredentials?) throws -> Void = TokenStore.save) {
         self.clientID = clientID
         self.client = client
         self.save = save
-        credentials = try read()
+        do { credentials = try read() }
+        catch {
+            requiresReconnect = true
+            loadError = "KeychainからSlackの接続情報を読み出せませんでした。Slackに接続し直してください。"
+        }
         if let credentials { requiresReconnect = credentials.clientID != clientID }
     }
 
@@ -28,12 +33,14 @@ final class SlackConnection {
         try save(credentials)
         self.credentials = credentials
         requiresReconnect = false
+        loadError = nil
     }
 
     func disconnect() throws {
         try save(nil)
         credentials = nil
         requiresReconnect = false
+        loadError = nil
         // An in-flight refresh must finish before a new connection can replace it.
     }
 

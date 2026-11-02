@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        do { model = AppModel(storage: try DraftStorage(), connection: try SlackConnection()) }
+        do { model = AppModel(storage: try DraftStorage(), connection: SlackConnection()) }
         catch {
             let alert = NSAlert()
             alert.messageText = "Times Shotを起動できませんでした"

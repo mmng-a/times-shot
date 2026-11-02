@@ -10,7 +10,7 @@ import TimesShotCore
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let app: AppModel
 
-    init(connected: Bool = false) throws {
+    init(connected: Bool = false, connection: SlackConnection? = nil) throws {
         let defaults = try #require(UserDefaults(suiteName: suite))
         var configuration = Configuration()
         if connected {
@@ -23,7 +23,7 @@ import TimesShotCore
         }
         try configuration.save(defaults: defaults)
         app = AppModel(storage: try DraftStorage(directory: directory), defaults: defaults,
-                       connection: try testConnection(connected: connected))
+                       connection: connection ?? testConnection(connected: connected))
     }
 
     func cleanup() {
@@ -138,6 +138,31 @@ import TimesShotCore
     #expect(settings.connectionError?.contains("キャンセル") == true)
     #expect(!settings.checkingConnection)
     #expect(fixture.app.connection.credentials == original)
+}
+
+@MainActor @Test(arguments: [false, true])
+func unreadableCredentialsAllowStartupAndReconnectionWithoutDiscardingDrafts(corrupt: Bool) throws {
+    var writes = 0
+    let connection = SlackConnection(clientID: "1.2", read: {
+        if corrupt { return try JSONDecoder().decode(SlackCredentials.self, from: Data("invalid credentials".utf8)) }
+        throw StorageError.message("Keychain access denied")
+    }, save: { _ in writes += 1 })
+    let fixture = try SettingsFixture(connected: true, connection: connection)
+    defer { fixture.cleanup() }
+    fixture.app.draft = Draft(text: "編集中")
+    let settings = SettingsModel(app: fixture.app, applyShortcut: { _ in }, client: testSlackClient())
+    #expect(connection.credentials == nil)
+    #expect(connection.requiresReconnect)
+    #expect(settings.connectionError?.contains("Slackに接続し直してください") == true)
+    #expect(!fixture.app.isReady)
+    #expect(writes == 0)
+    try fixture.app.connect(testCredentials())
+    #expect(connection.loadError == nil)
+    #expect(!connection.requiresReconnect)
+    #expect(fixture.app.canSend)
+    #expect(fixture.app.draft.text == "編集中")
+    #expect(fixture.app.configuration.selectedChannel?.channelID == "C00000001")
+    #expect(writes == 1)
 }
 
 @MainActor @Test func authenticationCallbackCanArriveOutsideTheMainActor() async throws {

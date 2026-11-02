@@ -59,8 +59,8 @@ func invalidOrDuplicateChannelSettingsAreRejected(channelID: String) {
     let extra = PostingChannel(channelID: "C00000002", name: "project")
     configuration.additionalChannels = [extra]
     try configuration.save(defaults: defaults)
-    let model = AppModel(storage: storage, defaults: defaults, connection: try testConnection())
-    let restartConnection = try testConnection()
+    let model = AppModel(storage: storage, defaults: defaults, connection: testConnection())
+    let restartConnection = testConnection()
     var delivered: [PendingPost] = []
     await withCheckedContinuation { done in
         model.queue = PostingQueue(send: { _ in }, completed: { post, _ in

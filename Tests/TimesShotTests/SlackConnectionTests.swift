@@ -70,7 +70,7 @@ private final class ConnectionProtocol: URLProtocol, @unchecked Sendable {
     @Test func simultaneousOperationsShareOneRefreshAndPersistBothTokens() async throws {
         let original = testCredentials(expiresAt: .distantPast)
         var saved: [SlackCredentials?] = []
-        let connection = try SlackConnection(clientID: "1.2", client: client(), read: { original }, save: { saved.append($0) })
+        let connection = SlackConnection(clientID: "1.2", client: client(), read: { original }, save: { saved.append($0) })
         var first: Task<String, Error>!
         await withCheckedContinuation { started in
             ConnectionHTTP.shared.reset(refreshed, held: true, started: { started.resume() })
@@ -93,7 +93,7 @@ private final class ConnectionProtocol: URLProtocol, @unchecked Sendable {
     @Test func disconnectDuringRefreshCannotRestoreCredentialsOrReturnAToken() async throws {
         let original = testCredentials(expiresAt: .distantPast)
         var saved: [SlackCredentials?] = []
-        let connection = try SlackConnection(clientID: "1.2", client: client(), read: { original }, save: { saved.append($0) })
+        let connection = SlackConnection(clientID: "1.2", client: client(), read: { original }, save: { saved.append($0) })
         var operation: Task<String, Error>!
         await withCheckedContinuation { started in
             ConnectionHTTP.shared.reset(refreshed, held: true, started: { started.resume() })
@@ -110,7 +110,7 @@ private final class ConnectionProtocol: URLProtocol, @unchecked Sendable {
     @Test func revokedRefreshRequiresReconnectAndDoesNotRetry() async throws {
         ConnectionHTTP.shared.reset(#"{"ok":false,"error":"invalid_refresh_token"}"#)
         let original = testCredentials(expiresAt: .distantPast)
-        let connection = try SlackConnection(clientID: "1.2", client: client(), read: { original }, save: { _ in })
+        let connection = SlackConnection(clientID: "1.2", client: client(), read: { original }, save: { _ in })
         for _ in 0..<2 {
             await #expect(throws: SlackAuthorizationError.reconnect) { try await connection.accessToken(for: original.connectionID) }
         }
@@ -121,7 +121,7 @@ private final class ConnectionProtocol: URLProtocol, @unchecked Sendable {
     @Test func failedKeychainWriteDoesNotReuseARedeemedRefreshToken() async throws {
         ConnectionHTTP.shared.reset(refreshed)
         let original = testCredentials(expiresAt: .distantPast)
-        let connection = try SlackConnection(clientID: "1.2", client: client(), read: { original },
+        let connection = SlackConnection(clientID: "1.2", client: client(), read: { original },
                                              save: { _ in throw StorageError.message("test write failure") })
         await #expect(throws: StorageError.self) { try await connection.accessToken(for: original.connectionID) }
         #expect(connection.credentials?.refreshToken == "new-refresh")
@@ -131,7 +131,7 @@ private final class ConnectionProtocol: URLProtocol, @unchecked Sendable {
     }
 
     @Test func postsBoundToAnotherConnectionNeverReceiveTheCurrentToken() async throws {
-        let connection = try testConnection()
+        let connection = testConnection()
         await #expect(throws: SlackAuthorizationError.changedConnection) { try await connection.accessToken(for: UUID()) }
         try connection.replace(testCredentials())
         #expect(!connection.requiresReconnect)
@@ -146,7 +146,7 @@ private final class ConnectionProtocol: URLProtocol, @unchecked Sendable {
             defaults.removePersistentDomain(forName: suite)
             try? FileManager.default.removeItem(at: directory)
         }
-        let app = AppModel(storage: try DraftStorage(directory: directory), defaults: defaults, connection: try testConnection())
+        let app = AppModel(storage: try DraftStorage(directory: directory), defaults: defaults, connection: testConnection())
         try app.connect(testCredentials())
         let settings = SettingsModel(app: app, applyShortcut: { _ in }, client: client())
         await settings.reloadChannels()

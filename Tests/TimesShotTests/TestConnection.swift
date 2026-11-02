@@ -9,8 +9,8 @@ func testCredentials(teamID: String = "T1", userID: String = "U1", expiresAt: Da
                      refreshExpiresAt: .distantFuture, connectionID: connectionID)
 }
 
-@MainActor func testConnection(connected: Bool = true) throws -> SlackConnection {
-    try SlackConnection(clientID: "1.2", read: { connected ? testCredentials() : nil }, save: { _ in })
+@MainActor func testConnection(connected: Bool = true) -> SlackConnection {
+    SlackConnection(clientID: "1.2", read: { connected ? testCredentials() : nil }, save: { _ in })
 }
 
 func testSlackClient() -> SlackClient {

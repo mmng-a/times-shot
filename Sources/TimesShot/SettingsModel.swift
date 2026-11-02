@@ -31,6 +31,7 @@ final class SettingsModel {
         self.applyShortcut = applyShortcut
         self.client = client
         self.authenticate = authenticate ?? SlackWebAuthentication().authenticate
+        connectionError = app.connection.loadError
     }
 
     func connect(window: NSWindow?) async {
